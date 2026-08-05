@@ -1,0 +1,55 @@
+citHeader("To cite the GQR software, use:")
+
+bibentry(
+  bibtype = "Manual",
+  title = "GQR: Generalised Q Analysis in R",
+  author = c(
+    person("Gábor", "Pozsgai"),
+    person("Tomaz Ponce", "Dentinho")
+  ),
+  year = "2026",
+  note = "R package version 0.1.0"
+)
+
+citHeader("The methodological basis of GQR is:")
+
+bibentry(
+  bibtype = "Article",
+  title = "Generalized Q analysis as a new tool in social science research: A pedagogical introduction",
+  author = c(
+    person("Tomaz Ponce", "Dentinho"),
+    person("Karima", "Kourtit"),
+    person("Peter", "Nijkamp")
+  ),
+  journal = "Eastern Journal of European Studies",
+  year = "2023",
+  volume = "14",
+  number = "2",
+  pages = "5--21",
+  doi = "10.47743/ejes-2023-0201"
+)
+
+citHeader("When using the bundled gardening example, also cite the source data paper:")
+
+bibentry(
+  bibtype = "Article",
+  title = "A multilingual, multi-country dataset on gardening and biodiversity awareness across Central and Eastern Europe",
+  author = c(
+    person("Zsófia", "Varga-Szilay"),
+    person("Lucija", "Šerić Jelaska"),
+    person("Silva", "Vilumets"),
+    person("Arvīds", "Barševskis"),
+    person("Klára", "Benedek"),
+    person("Danilo", "Bevk"),
+    person("Agata", "Jojczyk"),
+    person("Anton", "Krištín"),
+    person("Jana", "Růžičková"),
+    person("Eve", "Veromann"),
+    person("Kinga Gabriela", "Fetykó"),
+    person("Gergely", "Szövényi"),
+    person("Gábor", "Pozsgai")
+  ),
+  journal = "Scientific Data",
+  year = "2026",
+  doi = "10.1038/s41597-026-07887-9"
+)

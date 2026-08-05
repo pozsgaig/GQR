@@ -1,0 +1,120 @@
+---
+title: "Methodology and interpretation in GQR"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Methodology and interpretation in GQR}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(GQR)
+```
+
+## From traditional to Generalised Q analysis
+
+Traditional Q methodology treats respondents as variables and statements as
+observations so that shared subjective positions can be identified. Dentinho,
+Kourtit and Nijkamp (2023) describe three practical difficulties: respondents
+may be asked to rank too many statements, the statement count constrains the
+number of non-redundant respondents, and naming components can be subjective.
+
+Generalised Q analysis addresses these limitations by asking respondents to
+rank or score smaller sets of simple statements, then systematically
+recombining those responses into a larger synthetic statement space.
+
+## Matrices
+
+Let `V` have respondents in rows and simple statements in columns. Let `D` be a
+binary matrix with synthetic combinations in rows and simple statements in
+columns. GQR calculates:
+
+```text
+W = D %*% t(V)
+```
+
+Each value in `W` is a synthetic respondent evaluation of one combined
+statement. Rows of `W` are combinations; columns are respondents.
+
+## Design choices
+
+### Full binary design
+
+All subsets are included. This design is exhaustive but grows as `2^m`.
+
+```{r}
+gqr_estimate_design(18, mode = "all", n_respondents = 100)
+```
+
+### Grouped one-per-group design
+
+This design represents combinations formed by selecting one alternative from
+each question or thematic group. If group sizes are 4, 3 and 5, the design has
+60 combinations rather than `2^12 = 4096`.
+
+```{r}
+variables <- paste0("S", 1:12)
+groups <- list(
+  Production = variables[1:4],
+  Aesthetics = variables[5:7],
+  Maintenance = variables[8:12]
+)
+
+gqr_estimate_design(
+  variables,
+  mode = "group_one_per",
+  groups = groups
+)
+```
+
+### Random design
+
+Random Bernoulli combinations hold the number of rows fixed and can be used as
+an exploratory approximation. Results should be checked across seeds or larger
+samples of combinations.
+
+## PCA orientation
+
+GQR applies PCA to `W`, not to its transpose. Synthetic combinations are the
+observations, so PCA scores describe combinations and PCA loadings describe
+respondents. Varimax rotation is orthogonal and is intended to simplify the
+component pattern without introducing correlations among components.
+
+## Component interpretation
+
+Statement regressions explain combination scores using the columns of `D`. In a
+grouped one-per-group design, the dummies within each group sum to one, so one
+statement per group is omitted as a baseline.
+
+Respondent regressions explain respondent loadings with metadata. These models
+can identify whether components are associated with demographic, geographic,
+or other respondent characteristics.
+
+Regression results are aids to interpretation, not automatic labels. Component
+meaning should be assessed from the design, loadings, scores, coefficients,
+substantive context, and robustness across analytical choices.
+
+## Additivity and consistency
+
+The W construction assumes that the evaluation of a combined statement equals
+the sum of the constituent evaluations. This is the central modelling
+assumption. Interactions, incompatibilities, or context effects among simple
+statements are not represented automatically.
+
+Dentinho et al. (2023) also describe consistency testing as an important future
+and empirical use of the framework. Direct evaluations of selected combined
+statements can, in principle, be compared with their synthetic values.
+
+## Missing data and scaling
+
+GQR can reject, mean-impute, or replace non-finite values with zero when
+constructing W. The choice should be justified by the study design. Scaling can
+strongly affect PCA when respondents or statements differ in variance.
+
+## Reference
+
+Dentinho, T. P., Kourtit, K., & Nijkamp, P. (2023). Generalized Q analysis as a
+new tool in social science research: A pedagogical introduction. *Eastern
+Journal of European Studies*, **14**(2), 5–21.
+doi:10.47743/ejes-2023-0201.

@@ -1,0 +1,182 @@
+---
+title: "Getting started with GQR"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with GQR}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(GQR)
+```
+
+## Purpose
+
+GQR implements Generalised Q analysis as described by Dentinho, Kourtit and
+Nijkamp (2023). It expands smaller sets of simple ranked or scored statements
+into synthetic combined statements, constructs the W matrix, applies PCA, and
+supports interpretation with statement and respondent regressions.
+
+## Load the example data
+
+The accessor returns a data frame directly:
+
+```{r}
+dat <- gqr_example_data("dummy_data")
+str(dat)
+```
+
+The same object can be loaded through the conventional package-data interface:
+
+```{r}
+data("dummy_data", package = "GQR")
+```
+
+## Complete workflow
+
+```{r}
+fit <- gqr_analysis(
+  data = dat,
+  analysis_cols = paste0("Q", 1:9),
+  id_col = "Respondent",
+  dummy_mode = "all",
+  n_components = 3,
+  rotation = "varimax",
+  respondent_regression = FALSE
+)
+
+fit
+summary(fit)$variance
+```
+
+The full binary design has 512 rows because nine simple statements create
+`2^9` subsets when the empty combination is retained.
+
+## Grouped one-per-group design
+
+The grouped design is appropriate when simple statements are alternatives
+within separate questions or thematic blocks.
+
+```{r}
+groups <- data.frame(
+  group = rep(c("Question 1", "Question 2", "Question 3"), each = 3),
+  variable = paste0("Q", 1:9)
+)
+
+fit_grouped <- gqr_analysis(
+  data = dat,
+  analysis_cols = paste0("Q", 1:9),
+  id_col = "Respondent",
+  dummy_mode = "group_one_per",
+  groups = groups,
+  n_components = 3,
+  rotation = "varimax",
+  respondent_regression = FALSE
+)
+
+dim(fit_grouped$D)
+fit_grouped$statement_regression$baselines
+```
+
+Exactly one statement is active in each group, producing `3 * 3 * 3 = 27`
+synthetic combinations.
+
+## Random design
+
+```{r}
+fit_random <- gqr_analysis(
+  data = dat,
+  analysis_cols = paste0("Q", 1:9),
+  id_col = "Respondent",
+  dummy_mode = "random",
+  n_patterns = 200,
+  prob = 0.5,
+  seed = 101,
+  n_components = 3,
+  respondent_regression = FALSE
+)
+
+dim(fit_random$D)
+```
+
+## Step-by-step workflow
+
+```{r}
+prepared <- gqr_prepare_data(
+  dat,
+  analysis_cols = paste0("Q", 1:9),
+  id_col = "Respondent",
+  transform = "standardise"
+)
+
+gqr_estimate_design(
+  prepared$analysis_cols,
+  mode = "all",
+  n_respondents = nrow(prepared$data)
+)
+
+D <- gqr_generate_dummies(prepared$analysis_cols, mode = "all")
+W <- gqr_make_w(prepared, D = D)
+pca <- gqr_pca(W, n_components = 3, rotation = "varimax")
+models <- gqr_regress_statements(pca, D)
+
+head(models$coefficients)
+```
+
+## Gardening example
+
+The bundled `gardening` object contains selected columns from the multilingual
+Central and Eastern European gardening questionnaire dataset described by
+Varga-Szilay et al. (2026). It is a package example, not a replacement for the
+full published dataset.
+
+```{r gardening, eval=FALSE}
+data("gardening", package = "GQR")
+
+analysis_columns <- c(
+  "How_important_making_beautiful",
+  "How_importnat_conservation",
+  "How_important_making_money",
+  "How_important_sel_supply",
+  "Time_spend",
+  "How_often_plant",
+  "How_important_pesticide"
+)
+
+groups <- data.frame(
+  group = c(rep("Motivation", 4), rep("Management", 3)),
+  variable = analysis_columns
+)
+
+fit_gardening <- gqr_analysis(
+  gardening,
+  analysis_cols = analysis_columns,
+  id_col = "ID",
+  covariate_cols = c("Country_code", "Age_group", "Garden_size"),
+  transform = "standardise",
+  dummy_mode = "group_one_per",
+  groups = groups,
+  n_components = 4
+)
+```
+
+## Graphical interface
+
+```{r shiny, eval=FALSE}
+run_gqr()
+```
+
+## References
+
+Dentinho, T. P., Kourtit, K., & Nijkamp, P. (2023). Generalized Q analysis as a
+new tool in social science research: A pedagogical introduction. *Eastern
+Journal of European Studies*, **14**(2), 5–21.
+doi:10.47743/ejes-2023-0201.
+
+Varga-Szilay, Z., Šerić Jelaska, L., Vilumets, S., Barševskis, A., Benedek, K.,
+Bevk, D., Jojczyk, A., Krištín, A., Růžičková, J., Veromann, E., Fetykó, K. G.,
+Szövényi, G., & Pozsgai, G. (2026). A multilingual, multi-country dataset on
+gardening and biodiversity awareness across Central and Eastern Europe.
+*Scientific Data*. doi:10.1038/s41597-026-07887-9.

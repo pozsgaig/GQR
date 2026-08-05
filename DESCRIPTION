@@ -1,0 +1,50 @@
+Package: GQR
+Type: Package
+Title: Generalised Q Analysis in R
+Version: 0.1.0
+Authors@R: c(
+    person("Gábor", "Pozsgai", role = c("aut", "cre"),
+           email = "pozsgaig@coleoptera.hu"),
+    person("Tomaz Ponce", "Dentinho", role = "aut")
+  )
+Description: Implements Generalised Q analysis as introduced by Dentinho,
+    Kourtit and Nijkamp (2023) <doi:10.47743/ejes-2023-0201>. The method
+    constructs many synthetic combined statements from smaller sets of simple
+    ranked or scored statements, forms the synthetic evaluation matrix, applies
+    principal component analysis with optional Varimax rotation, and supports
+    interpretation through regressions on statement content and respondent
+    characteristics. The package provides both a programmatic workflow and an
+    optional Shiny interface. A bundled gardening example contains selected
+    columns from the multilingual Central and Eastern European questionnaire
+    dataset described by Varga-Szilay et al. (2026)
+    <doi:10.1038/s41597-026-07887-9>.
+License: GPL (>= 3)
+Encoding: UTF-8
+LazyData: true
+Depends:
+    R (>= 4.1.0)
+Imports:
+    stats,
+    tools,
+    utils
+Suggests:
+    broom,
+    dplyr,
+    DT,
+    ggnewscale,
+    ggplot2,
+    knitr,
+    Polychrome,
+    purrr,
+    RColorBrewer,
+    readr,
+    rmarkdown,
+    scales,
+    shiny,
+    testthat (>= 3.0.0),
+    tibble,
+    tidyr
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
