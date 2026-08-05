@@ -103,6 +103,10 @@ dim(fit_random$D)
 
 ## Step-by-step workflow
 
+A dummy matrix is a binary design matrix: its columns are the original simple
+statements and its rows are synthetic combinations. An entry of `1` includes a
+statement in a combination; `0` excludes it.
+
 ```{r}
 prepared <- gqr_prepare_data(
   dat,

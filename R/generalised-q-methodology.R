@@ -11,9 +11,14 @@
 #' @details
 #' Suppose there are `m` simple statements and `n` respondents. The input matrix
 #' `V` has respondents in rows and statements in columns. A binary design matrix
-#' `D` has statements in columns and synthetic combinations in rows. For every
-#' combination, a value of one indicates that the corresponding simple
-#' statement is active.
+#' `D` has statements in columns and synthetic combinations in rows. Its
+#' entries are called *dummy variables* in the conventional statistical sense:
+#' each is a binary indicator rather than a new measured variable. A value of
+#' one means that the corresponding simple statement is included in the
+#' synthetic combination, whereas zero means that it is excluded. Thus, for
+#' three statements `A`, `B`, and `C`, the row `(1, 0, 1)` represents a
+#' synthetic statement containing `A` and `C` but not `B`. These dummies do not
+#' represent artificial respondents or missing values.
 #'
 #' GQR supports three design strategies:
 #'

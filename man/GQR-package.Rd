@@ -33,9 +33,11 @@ combinations; the loadings describe respondents.
 
 \section{Installation}{
 
-Install an extracted source directory with
-\code{devtools::install("path/to/GQR", upgrade = "never")}. For package
-development, run \code{devtools::document()}, \code{devtools::test()}, and
+Install the current development version from GitHub with
+\code{remotes::install_github("pozsgaig/GQR", dependencies = TRUE, upgrade = "never")}. The source repository is
+\url{https://github.com/pozsgaig/GQR}.
+
+For package development, run \code{devtools::document()}, \code{devtools::test()}, and
 \code{devtools::check()} before installation. All manual pages are generated from
 roxygen2 comments in \verb{R/}; files under \verb{man/} are generated outputs.
 

@@ -9,6 +9,7 @@ homeTabUI <- function(id) {
     shiny::div(
       class = "q-container q-home",
       shiny::h2("GQR: Generalised Q Analysis in R"),
+      shiny::h6("Gábor Pozsgai & Tomaz Ponce Dentinho"),
       shiny::p(
         class = "lead",
         "GQR provides a complete Generalised Q workflow through this interactive Shiny application and through ordinary R functions."
@@ -23,6 +24,10 @@ homeTabUI <- function(id) {
           class = "panel-body q-panel",
           shiny::p(
             "GQR implements the Generalised Q method introduced by Dentinho, Kourtit and Nijkamp (2023). The method recombines smaller groups of simple ranked or scored statements into a larger set of synthetic combined statements, constructs the W matrix, and applies principal component analysis to identify shared respondent structures."
+          ),
+          shiny::p(
+            shiny::strong("What are dummies? "),
+            "In GQR, a dummy is a binary indicator in the design matrix D. Each column represents one original simple statement and each row represents one synthetic combined statement. A value of 1 means that the statement is included in that combination; 0 means that it is not included. For example, the pattern (1, 0, 1) combines the first and third statements but excludes the second."
           ),
           shiny::p(
             "Statement-content and respondent-covariate regressions support component interpretation. The synthetic evaluation is additive, so researchers should consider whether the sum of constituent evaluations is appropriate for their application."

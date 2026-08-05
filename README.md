@@ -1,113 +1,78 @@
 # GQR: Generalised Q Analysis in R
 
-`GQR` implements the Generalised Q method introduced by Dentinho, Kourtit and
-Nijkamp (2023). It is designed for studies in which respondents rank or score
-small groups of simple statements, while the analysis requires a much larger
-set of combined statements. `GQR` creates those synthetic combinations,
-calculates their respondent-specific evaluations, extracts common structures
-with principal component analysis, and supports component interpretation with
-regression models.
+[![R >= 4.1.0](https://img.shields.io/badge/R-%E2%89%A5%204.1.0-276DC3.svg)](https://www.r-project.org/)
+[![License: GPL-3](https://img.shields.io/badge/license-GPL--3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![Development status](https://img.shields.io/badge/status-development-orange.svg)](https://github.com/pozsgaig/GQR)
 
-The package can be used through ordinary R functions or through the bundled
-Shiny application. Both interfaces use the same analytical orientation:
+**GQR** provides programmatic and graphical tools for **Generalised Q analysis**. The package implements the framework introduced by Dentinho, Kourtit and Nijkamp (2023), in which a large set of synthetic combined statements is constructed from smaller groups of simple ranked or scored statements.
 
-- rows of `D`: synthetic combined statements;
-- columns of `D`: simple statements;
-- rows of `W`: synthetic combined statements;
-- columns of `W`: respondents;
-- PCA scores: positions of synthetic combinations;
-- PCA loadings: positions of respondents;
-- statement regressions: component scores explained by simple-statement dummies;
-- respondent regressions: respondent loadings explained by covariates.
+The package supports the complete workflow:
+
+- preparation, filtering and transformation of respondent-level data;
+- full, grouped one-per-group and random synthetic-statement designs;
+- construction of the binary design (dummy) matrix `D` and synthetic evaluation matrix `W`;
+- principal component analysis with optional Varimax rotation;
+- regression-based interpretation of statement content and respondent covariates;
+- a bundled Shiny application for interactive analysis and visualisation.
+
+> **Development status:** GQR is currently an early development release. Results should be checked carefully and the package interface may still change.
 
 ## Methodological basis
 
-The package follows the Generalised Q framework described in:
+Generalised Q analysis extends traditional Q methodology by constructing synthetic combined statements from smaller groups of simple statements. These combinations are represented by **dummy variables**: binary indicators in which `1` means that a simple statement is included in a synthetic statement and `0` means that it is excluded.
 
-Dentinho, T. P., Kourtit, K., & Nijkamp, P. (2023). Generalized Q analysis as a
-new tool in social science research: A pedagogical introduction. *Eastern
-Journal of European Studies*, **14**(2), 5–21.
-https://doi.org/10.47743/ejes-2023-0201
-
-For a respondent-by-statement matrix `V` and a binary combination matrix `D`,
-GQR constructs:
+For a respondent-by-statement matrix `V` and a binary design matrix `D`, GQR constructs:
 
 ```text
 W = D %*% t(V)
 ```
 
-The method assumes that a respondent's synthetic evaluation of a combined
-statement can be represented by the sum of the evaluations of its constituent
-simple statements. See `?gqr_methodology` for the assumptions, interpretation,
-and computational implications.
+The rows of `D` and `W` represent synthetic combined statements. The columns of `D` represent the original simple statements, while the columns of `W` represent respondents.
+
+The methodological basis is:
+
+> Dentinho, T. P., Kourtit, K., & Nijkamp, P. (2023). Generalized Q analysis as a new tool in social science research: A pedagogical introduction. *Eastern Journal of European Studies*, 14(2), 5–21. https://doi.org/10.47743/ejes-2023-0201
+
+See `?gqr_methodology` and the methodology vignette for the assumptions, matrix orientation and interpretation of the results.
 
 ## Installation
 
-The downloadable ZIP is a source directory bundle, not an R binary package.
-Extract it first, preferably into a new empty folder named `GQR`.
-
-### Install from the extracted ZIP
+GQR is currently available from GitHub.
 
 ```r
-install.packages("devtools")
+install.packages("remotes")
 
-pkg <- "D:/path/to/GQR"
-
-devtools::install(
-  pkg,
+remotes::install_github(
+  "pozsgaig/GQR",
+  dependencies = TRUE,
   upgrade = "never"
 )
 ```
 
-### Document, test, check, and install the development source
-
-```r
-pkg <- "D:/path/to/GQR"
-
-devtools::document(pkg)
-devtools::test(pkg)
-devtools::check(pkg)
-devtools::install(pkg, upgrade = "never")
-```
-
-`devtools::document()` regenerates all files under `man/` from the roxygen2
-comments in `R/`. The `.Rd` files should not be edited directly.
-
-### Build and install a standard source archive
-
-```r
-devtools::build("D:/path/to/GQR")
-
-install.packages(
-  "D:/path/to/GQR_0.1.0.tar.gz",
-  repos = NULL,
-  type = "source"
-)
-```
-
-### Optional graphical dependencies
-
-The core programmatic workflow has a small dependency set. To use the complete
-Shiny interface, install the suggested graphical packages when requested by
-`run_gqr()`, or install them in advance:
-
-```r
-install.packages(c(
-  "shiny", "dplyr", "tidyr", "purrr", "tibble", "readr",
-  "ggplot2", "ggnewscale", "DT", "broom", "Polychrome",
-  "RColorBrewer", "scales"
-))
-```
-
-Verify the installation:
+Then load the package:
 
 ```r
 library(GQR)
-packageVersion("GQR")
-help(package = "GQR")
 ```
 
-## Example 1: complete full-design workflow
+The repository can also be cloned for development:
+
+```bash
+git clone https://github.com/pozsgaig/GQR.git
+```
+
+From the cloned package directory:
+
+```r
+devtools::document()
+devtools::test()
+devtools::check()
+devtools::install(upgrade = "never")
+```
+
+## Quick start
+
+### Full binary design
 
 ```r
 library(GQR)
@@ -126,19 +91,15 @@ fit <- gqr_analysis(
 
 fit
 summary(fit)$variance
-head(fit$pca$loadings)
 head(fit$pca$scores)
-head(fit$statement_regression$coefficients)
+head(fit$pca$loadings)
 ```
 
-Nine simple statements produce `2^9 = 512` binary combinations when the empty
-combination is retained.
+With nine simple statements, the full design contains `2^9 = 512` binary combinations when the empty combination is retained.
 
-## Example 2: grouped one-per-group design
+### Grouped one-per-group design
 
-Grouped designs correspond most closely to the structured recombination
-emphasised by Dentinho et al. (2023): exactly one simple statement is selected
-from each thematic question or group.
+Grouped designs select exactly one statement from each thematic group.
 
 ```r
 groups <- data.frame(
@@ -157,12 +118,35 @@ fit_grouped <- gqr_analysis(
   respondent_regression = FALSE
 )
 
-dim(fit_grouped$D)   # 27 combinations by 9 simple statements
+dim(fit_grouped$D)
 summary(fit_grouped)$variance
 fit_grouped$statement_regression$baselines
 ```
 
-## Example 3: random approximation of a large design
+Group definitions can also be read from an external CSV file containing the columns `group` and `variable`:
+
+```r
+groups <- gqr_read("groups.csv")
+```
+
+Example:
+
+```csv
+group,variable
+Question 1,Q1
+Question 1,Q2
+Question 1,Q3
+Question 2,Q4
+Question 2,Q5
+Question 2,Q6
+Question 3,Q7
+Question 3,Q8
+Question 3,Q9
+```
+
+### Random approximation
+
+Random mode samples a fixed number of binary patterns and is useful when exhaustive enumeration is too large.
 
 ```r
 fit_random <- gqr_analysis(
@@ -170,7 +154,7 @@ fit_random <- gqr_analysis(
   analysis_cols = paste0("Q", 1:9),
   id_col = "Respondent",
   dummy_mode = "random",
-  n_patterns = 250,
+  n_patterns = 500,
   prob = 0.5,
   seed = 42,
   n_components = 3,
@@ -178,10 +162,7 @@ fit_random <- gqr_analysis(
 )
 ```
 
-Random mode is useful when exhaustive enumeration is too large. A seed makes
-the sampled design reproducible.
-
-## Example 4: run each analytical stage separately
+### Run the workflow step by step
 
 ```r
 prepared <- gqr_prepare_data(
@@ -217,86 +198,49 @@ statement_models <- gqr_regress_statements(
 )
 ```
 
-## Example 5: filtering and transformation
+## Shiny application
 
-```r
-selected <- gqr_filter_data(
-  dat,
-  id_col = "Respondent",
-  ids = c("R1", "R2", "R3", "R4", "R5")
-)
-
-standardised <- gqr_transform_data(
-  selected,
-  columns = paste0("Q", 1:9),
-  method = "standardise"
-)
-```
-
-Standardisation and normalisation operate column-wise by default. Relative
-importance and entropy contributions operate row-wise in automatic mode,
-because they describe the composition of each respondent's statement scores.
-
-## Example 6: gardening data and respondent covariates
-
-The bundled `gardening` object is a selected-column extract from the
-multilingual Central and Eastern European gardening questionnaire dataset
-published by Varga-Szilay et al. (2026). It is included only as an analysis
-example and does not replace the complete published dataset.
-
-```r
-data("gardening", package = "GQR")
-
-analysis_columns <- c(
-  "How_important_making_beautiful",
-  "How_importnat_conservation",
-  "How_important_making_money",
-  "How_important_sel_supply",
-  "Time_spend",
-  "How_often_plant",
-  "How_important_pesticide"
-)
-
-gardening_groups <- data.frame(
-  group = c(rep("Motivation", 4), rep("Management", 3)),
-  variable = analysis_columns
-)
-
-# A larger example; run when needed.
-fit_gardening <- gqr_analysis(
-  data = gardening,
-  analysis_cols = analysis_columns,
-  id_col = "ID",
-  covariate_cols = c("Country_code", "Age_group", "Garden_size"),
-  transform = "standardise",
-  dummy_mode = "group_one_per",
-  groups = gardening_groups,
-  n_components = 4,
-  rotation = "varimax"
-)
-```
-
-Full data reference:
-
-Varga-Szilay, Z., Šerić Jelaska, L., Vilumets, S., Barševskis, A., Benedek, K.,
-Bevk, D., Jojczyk, A., Krištín, A., Růžičková, J., Veromann, E., Fetykó, K. G.,
-Szövényi, G., & Pozsgai, G. (2026). A multilingual, multi-country dataset on
-gardening and biodiversity awareness across Central and Eastern Europe.
-*Scientific Data*. https://doi.org/10.1038/s41597-026-07887-9
-
-For the complete variable-level description and detailed provenance, see
-`?gardening`.
-
-## Shiny interface
+Launch the graphical interface with:
 
 ```r
 run_gqr()
 ```
 
-The application includes the landing page, data preparation, column roles and
-labels, transformations, grouping, dummy designs, W-matrix graphics, PCA
-settings, scree and loading displays, component regressions, covariate plots,
-and downloads.
+The app provides tabs for:
+
+1. package and methodological overview;
+2. data import, labels, roles, transformations and grouping;
+3. dummy-design generation and construction of `W`;
+4. PCA settings and diagnostics;
+5. component interpretation, covariate analyses and downloads.
+
+A detailed guide is available in the Shiny application vignette:
+
+```r
+vignette("shiny-application", package = "GQR")
+```
+
+## Example datasets
+
+GQR contains two example datasets:
+
+```r
+data("dummy_data", package = "GQR")
+data("gardening", package = "GQR")
+```
+
+They can also be returned directly:
+
+```r
+dummy <- gqr_example_data("dummy_data")
+garden <- gqr_example_data("gardening")
+```
+
+The `gardening` object contains selected columns from the multilingual Central and Eastern European gardening questionnaire dataset. It is included only as an example and does not replace the full published dataset.
+
+> Varga-Szilay, Z., Šerić Jelaska, L., Vilumets, S., Barševskis, A., Benedek, K., Bevk, D., Jojczyk, A., Krištín, A., Růžičková, J., Veromann, E., Fetykó, K. G., Szövényi, G., & Pozsgai, G. (2026). A multilingual, multi-country dataset on gardening and biodiversity awareness across Central and Eastern Europe. *Scientific Data*. https://doi.org/10.1038/s41597-026-07887-9
+
+See `?gardening` for detailed provenance and references to the studies that analysed the dataset.
 
 ## Documentation
 
@@ -305,9 +249,45 @@ help(package = "GQR")
 ?gqr_methodology
 ?gqr_analysis
 ?gqr_generate_dummies
+?gqr_make_w
 ?gqr_pca
+?gqr_regress_statements
+?gqr_regress_respondents
 ?gardening
 ```
 
-All manual pages are generated by roxygen2 from comments in `R/`. Do not edit
-files under `man/` directly.
+Available vignettes:
+
+```r
+vignette("getting-started", package = "GQR")
+vignette("methodology", package = "GQR")
+vignette("shiny-application", package = "GQR")
+```
+
+All manual pages are generated from roxygen2 comments in `R/`. Files under `man/` should not be edited directly.
+
+## Citation
+
+To obtain the recommended citations in R:
+
+```r
+citation("GQR")
+```
+
+When using GQR, cite both the software and the methodological paper. When using the bundled gardening example, also cite the source data paper.
+
+## Problems and contributions
+
+Report reproducible problems through the [GitHub issue tracker](https://github.com/pozsgaig/GQR/issues). Include:
+
+- the GQR and R versions;
+- the operating system;
+- a minimal reproducible example;
+- the complete warning or error message;
+- `sessionInfo()` output where relevant.
+
+Contributions through pull requests are welcome. Please open an issue first for substantial changes so that the proposed scope can be discussed.
+
+## License
+
+GQR is released under the GNU General Public License version 3 or later (`GPL-3`).

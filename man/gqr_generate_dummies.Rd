@@ -43,11 +43,18 @@ An integer zero/one matrix with named columns and synthetic statement
 row names \code{S1}, \code{S2}, and so forth.
 }
 \description{
-Creates the binary matrix \code{D} used by Generalised Q analysis. Rows represent
-synthetic combined statements and columns represent the original simple
-statements.
+Creates the binary dummy matrix \code{D} used by Generalised Q analysis. Rows
+represent synthetic combined statements and columns represent the original
+simple statements. Each entry is an indicator: \code{1} means that a statement is
+included in a combination and \code{0} means that it is excluded.
 }
 \details{
+The word \emph{dummy} is used in its standard statistical meaning: a zero/one
+variable indicating membership or inclusion. It does not refer to an
+artificial respondent or to a missing value. For example, with columns \code{A},
+\code{B}, and \code{C}, the row \verb{(1, 0, 1)} denotes a synthetic statement that includes
+\code{A} and \code{C} but excludes \code{B}.
+
 In full mode, the rows follow binary counting. In grouped mode, exactly one
 variable is active in every group, implementing the structured recombination
 described by Dentinho et al. (2023). In random mode, entries are independent

@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use GQR, please cite the software and the Generalised Q methodology paper."
+title: "GQR: Generalised Q Analysis in R"
+type: software
+version: 0.1.0
+repository-code: "https://github.com/pozsgaig/GQR"
+url: "https://github.com/pozsgaig/GQR"
+license: GPL-3.0-or-later
+authors:
+  - family-names: "Pozsgai"
+    given-names: "Gábor"
+  - family-names: "Dentinho"
+    given-names: "Tomaz Ponce"
+preferred-citation:
+  type: article
+  authors:
+    - family-names: "Dentinho"
+      given-names: "Tomaz Ponce"
+    - family-names: "Kourtit"
+      given-names: "Karima"
+    - family-names: "Nijkamp"
+      given-names: "Peter"
+  title: "Generalized Q analysis as a new tool in social science research: A pedagogical introduction"
+  journal: "Eastern Journal of European Studies"
+  year: 2023
+  volume: 14
+  issue: 2
+  start: 5
+  end: 21
+  doi: "10.47743/ejes-2023-0201"

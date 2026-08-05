@@ -14,9 +14,14 @@ synthetic combined statements.
 \details{
 Suppose there are \code{m} simple statements and \code{n} respondents. The input matrix
 \code{V} has respondents in rows and statements in columns. A binary design matrix
-\code{D} has statements in columns and synthetic combinations in rows. For every
-combination, a value of one indicates that the corresponding simple
-statement is active.
+\code{D} has statements in columns and synthetic combinations in rows. Its
+entries are called \emph{dummy variables} in the conventional statistical sense:
+each is a binary indicator rather than a new measured variable. A value of
+one means that the corresponding simple statement is included in the
+synthetic combination, whereas zero means that it is excluded. Thus, for
+three statements \code{A}, \code{B}, and \code{C}, the row \verb{(1, 0, 1)} represents a
+synthetic statement containing \code{A} and \code{C} but not \code{B}. These dummies do not
+represent artificial respondents or missing values.
 
 GQR supports three design strategies:
 \itemize{

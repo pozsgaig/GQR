@@ -81,6 +81,22 @@ observations, so PCA scores describe combinations and PCA loadings describe
 respondents. Varimax rotation is orthogonal and is intended to simplify the
 component pattern without introducing correlations among components.
 
+## Dummy variables and the design matrix
+
+The term **dummy** is used here in its conventional statistical sense. A dummy
+is a binary indicator in the design matrix `D`: `1` means that a simple
+statement is included in a synthetic combination and `0` means that it is
+excluded. Columns of `D` are the original statements, while rows are synthetic
+combined statements. Thus, for three statements `A`, `B`, and `C`, the row
+`(1, 0, 1)` represents a combination containing `A` and `C`, but not `B`.
+These dummies are neither artificial respondents nor missing-value codes.
+
+A full design enumerates all permitted binary patterns, a grouped design selects
+exactly one statement from each group, and a random design samples a specified
+number of binary patterns. Multiplying `D` by the transpose of the response
+matrix produces `W`; each value in `W` is the sum of a respondent's scores for
+the statements included in that combination.
+
 ## Component interpretation
 
 Statement regressions explain combination scores using the columns of `D`. In a

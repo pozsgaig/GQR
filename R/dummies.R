@@ -103,9 +103,10 @@ gqr_estimate_design <- function(
 #' Generate the synthetic-statement design matrix
 #'
 #' @description
-#' Creates the binary matrix `D` used by Generalised Q analysis. Rows represent
-#' synthetic combined statements and columns represent the original simple
-#' statements.
+#' Creates the binary dummy matrix `D` used by Generalised Q analysis. Rows
+#' represent synthetic combined statements and columns represent the original
+#' simple statements. Each entry is an indicator: `1` means that a statement is
+#' included in a combination and `0` means that it is excluded.
 #'
 #' @param variables Character vector of unique simple-statement names.
 #' @param mode One of `"all"`, `"group_one_per"`, or `"random"`.
@@ -124,6 +125,12 @@ gqr_estimate_design <- function(
 #'   row names `S1`, `S2`, and so forth.
 #'
 #' @details
+#' The word *dummy* is used in its standard statistical meaning: a zero/one
+#' variable indicating membership or inclusion. It does not refer to an
+#' artificial respondent or to a missing value. For example, with columns `A`,
+#' `B`, and `C`, the row `(1, 0, 1)` denotes a synthetic statement that includes
+#' `A` and `C` but excludes `B`.
+#'
 #' In full mode, the rows follow binary counting. In grouped mode, exactly one
 #' variable is active in every group, implementing the structured recombination
 #' described by Dentinho et al. (2023). In random mode, entries are independent

@@ -1,0 +1,583 @@
+---
+title: "Using the GQR Shiny application"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Using the GQR Shiny application}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.align = "center"
+)
+library(GQR)
+```
+
+## Purpose of the application
+
+The GQR Shiny application provides a graphical interface for the complete
+Generalised Q analysis workflow. It is intended for users who prefer to prepare
+their data, construct synthetic statement combinations, run principal component
+analysis, and interpret the resulting components interactively.
+
+Generalised Q analysis extends traditional Q methodology by constructing a
+large set of synthetic combined statements from smaller groups of simple ranked
+or scored statements. These combinations are represented by dummy variables:
+binary indicators in which `1` means that a simple statement is included in a
+given synthetic statement and `0` means that it is excluded. This approach can
+reduce the burden placed on respondents, permit analyses with more respondents
+than simple statements, and provide quantitative support for naming and
+interpreting extracted components.
+
+The application implements the method introduced by Dentinho, Kourtit and
+Nijkamp (2023). The same workflow is also available through the ordinary R
+functions documented in the other GQR vignettes.
+
+```{r shiny-home, echo=FALSE, out.width="100%"}
+knitr::include_graphics("figures/shiny-home.png")
+```
+
+## Starting the application
+
+Load GQR and launch the interface with:
+
+```{r launch, eval=FALSE}
+library(GQR)
+run_gqr()
+```
+
+The application opens in the RStudio Viewer or in a web browser, depending on
+your R and Shiny settings. It contains six tabs:
+
+1. **Home**: a short methodological introduction and information about the
+   bundled gardening example;
+2. **Data**: data loading, labelling, column roles, transformations, and groups;
+3. **Dummies**: construction and inspection of the dummy matrix `D` and the
+   synthetic evaluation matrix `W`;
+4. **PCA**: principal component analysis, rotation, scree plot, and respondent
+   loadings;
+5. **PCA Regressions**: regression of combination scores on statement dummies;
+6. **Output**: regression and graphical analysis of respondent loadings against
+   selected covariates.
+
+<!-- OPTIONAL GRAPHICAL ELEMENT: Workflow diagram
+A simple diagram can be inserted here:
+Home -> Data -> Dummies -> PCA -> PCA Regressions -> Output
+Suggested filename: vignettes/figures/shiny-workflow.png
+-->
+
+## Home tab
+
+The Home tab introduces the methodological basis of GQR and explains the role
+of dummy variables. It also identifies the published source of the bundled
+gardening example. No analytical choices are made on this page.
+
+The three workflow cards summarise the main stages:
+
+- prepare the data;
+- construct and analyse the synthetic combinations;
+- interpret the components using plots and regressions.
+
+After reviewing the introduction, continue to the **Data** tab.
+
+## Data tab
+
+The Data tab contains four collapsible sections. The choices made here are
+frozen when **Next** is clicked. If you later change the selected variables,
+transformations, or grouping, click **Next** again before continuing so that the
+Dummies, PCA, and Output tabs use the revised settings.
+
+
+```{r shiny-home, echo=FALSE, out.width="100%"}
+knitr::include_graphics("figures/shiny-data-overview.png")
+```
+
+
+### 1. Data input
+
+Data can be supplied in two ways.
+
+#### Bundled example data
+
+Select **Use built-in dataset**, then choose either:
+
+- **Gardening**, which contains selected columns from the multilingual Central
+  and Eastern European gardening questionnaire dataset published by
+  Varga-Szilay et al. (2026); or
+- **Dummy data**, a small synthetic example with nine analysis variables.
+
+#### External data
+
+Use **Choose data file** to upload a file in one of the supported formats:
+
+- CSV (`.csv`);
+- RDS (`.rds`);
+- R data (`.rda` or `.RData`).
+
+For RDA or RData files, the selected object must be a data frame. Use **Open data
+viewer** to inspect the imported object before proceeding.
+
+If a CSV is read as a single column, check its delimiter and encoding before
+continuing.
+
+<!-- SCREENSHOT PLACEHOLDER: Data input
+Include a screenshot showing the built-in dataset selector and file upload.
+Suggested filename: vignettes/figures/shiny-data-input.png
+-->
+
+### 2. Column names and labels
+
+Internal variable names come directly from the data frame and are used in the
+analysis. Human-readable labels can be edited separately. These labels are
+particularly useful when the original variable names are abbreviated or coded.
+
+Edit the labels and click **Save labels**. Changing a label does not rename the
+underlying column in the data frame.
+
+<!-- SCREENSHOT PLACEHOLDER: Labels
+Include a screenshot showing several internal names and edited labels.
+Suggested filename: vignettes/figures/shiny-labels.png
+-->
+
+### 3. Column roles and transformations
+
+Assign variables to two roles:
+
+- **Columns for analysis** are the simple ranked or scored statements used to
+  construct `D` and `W`. These columns must be numeric.
+- **Covariate columns** contain respondent metadata used for filtering and for
+  the respondent-level regressions in the Output tab.
+
+The application initially selects numeric columns for analysis and non-numeric
+columns as covariates. Review these automatic selections carefully, because
+numeric identifiers or numeric metadata should not normally be treated as
+statements.
+
+One transformation can be applied to all selected analysis columns:
+
+- **No transformation**;
+- **Standardise (z-score)**;
+- **Normalise to [0,1]**;
+- **Relative importance (sum = 1)**;
+- **Shannon entropy**.
+
+The appropriate transformation depends on the scale and interpretation of the
+input values. Transformation changes the values used to construct `W`; it does
+not modify the source file.
+
+<!-- SCREENSHOT PLACEHOLDER: Roles and transformation
+Include a screenshot showing selected analysis columns, covariates, and the
+transformation choices.
+Suggested filename: vignettes/figures/shiny-roles-transformations.png
+-->
+
+### 4. Groups of variables
+
+Groups define sets of alternative statements. When groups are present, the
+application constructs combinations containing exactly one statement from each
+group. Without groups, the application uses the full binary design containing
+all permitted inclusion/exclusion patterns.
+
+Groups can be created in three ways.
+
+#### Upload a grouping file
+
+Upload a CSV with two columns named exactly `group` and `variable`:
+
+```text
+group,variable
+Motivation,How_important_making_beautiful
+Motivation,How_importnat_conservation
+Motivation,How_important_making_money
+Motivation,How_important_sel_supply
+Management,Time_spend
+Management,How_often_plant
+Management,How_important_pesticide
+```
+
+Values in `variable` must exactly match the internal names of selected analysis
+columns.
+
+#### Create groups interactively
+
+Enter a group name, click **Add group**, and assign analysis columns to it. A
+statement should belong to only one group. Groups can be deleted or all grouping
+can be cleared.
+
+#### Use random grouping
+
+The **Use random grouping** option randomly assigns the selected analysis
+variables to the requested number of groups. This is a way to create a grouping
+structure; it is not the same as the package-level random sampling of dummy
+patterns available through `gqr_analysis(dummy_mode = "random")`.
+
+<!-- SCREENSHOT PLACEHOLDER: Grouping interface
+Include a screenshot with at least two groups and their assigned variables.
+Suggested filename: vignettes/figures/shiny-groups.png
+-->
+
+When all settings are complete, click **Next**. This stores a snapshot of the
+current data and opens the Dummies tab.
+
+## Dummies tab
+
+The Dummies tab constructs the binary design matrix `D` and the synthetic
+evaluation matrix `W`.
+
+Each column of `D` represents one analysis statement, and each row represents a
+synthetic combination. For example, the pattern `(1, 0, 1)` includes the first
+and third statements and excludes the second. These dummies are neither
+artificial respondents nor missing-value codes.
+
+The synthetic evaluation matrix is calculated as:
+
+```text
+W = D %*% t(V)
+```
+
+where `V` contains respondents in rows and selected analysis variables in
+columns. Each value in `W` is therefore the sum of a respondent's scores for the
+statements included in that synthetic combination.
+
+<!-- SCREENSHOT PLACEHOLDER: Dummies tab introduction
+Include a screenshot showing the dummy explanation and reported number of
+combinations.
+Suggested filename: vignettes/figures/shiny-dummies-introduction.png
+-->
+
+### Respondent filters
+
+The collapsible filter panel can restrict respondents before PCA. Available
+controls depend on the covariates selected on the Data tab:
+
+- categorical covariates can be filtered by retained levels;
+- numeric covariates can be filtered by ranges;
+- respondent identifiers can be supplied as a comma-separated list.
+
+These filters change the respondent columns used in the subsequent analysis but
+do not change the dummy combinations.
+
+### Dummy matrix preview
+
+The dummy heatmap shows selected rows of `D`. Variables can be ordered:
+
+- alphabetically;
+- as they appeared on the Data tab;
+- by group size.
+
+Use this plot to verify that the intended combinations were generated. In a
+grouped design, each row should contain exactly one active statement per group.
+
+<!-- SCREENSHOT PLACEHOLDER: Dummy matrix D
+Include a screenshot of the D heatmap. A grouped example is preferable because
+the one-per-group structure is visually clear.
+Suggested filename: vignettes/figures/shiny-d-matrix.png
+-->
+
+### W matrix preview
+
+The W heatmap displays synthetic evaluations for combinations and respondents.
+Use the slider to restrict the number of displayed combinations. Numeric values
+can be added to the cells, although this is usually practical only for small
+matrices.
+
+<!-- SCREENSHOT PLACEHOLDER: W matrix
+Include a screenshot of the W heatmap, preferably without numeric labels for a
+large example and with labels for a small example.
+Suggested filename: vignettes/figures/shiny-w-matrix.png
+-->
+
+Click **Proceed to calculations** after checking both matrices. If more than
+1,000 dummy combinations are present, the application displays a warning before
+continuing. Large designs can require substantial memory and computation time.
+
+## PCA tab
+
+The PCA tab applies principal component analysis to `W`. Synthetic combinations
+are the observations, while respondents are the variables represented by the
+PCA loadings.
+
+<!-- SCREENSHOT PLACEHOLDER: PCA tab overview
+Include a screenshot containing the scree plot and PCA controls.
+Suggested filename: vignettes/figures/shiny-pca-overview.png
+-->
+
+### Explained variance and component selection
+
+The scree plot shows the variance explained by successive components. Select
+the number of retained components using the numeric control. The appropriate
+number should be based on explained variance, the scree pattern, interpretability,
+and the aims of the study rather than on a single automatic rule.
+
+The scree plot can be downloaded as PNG or PDF.
+
+### Rotation and PCA settings
+
+Available settings include:
+
+- no rotation or Varimax rotation;
+- centring;
+- scaling;
+- SPSS-style correlation-based scoring;
+- mean imputation for missing values in SPSS mode.
+
+Varimax is an orthogonal rotation intended to simplify component patterns. The
+choice to centre, scale, or impute should be justified by the input data and the
+study design.
+
+### Loadings tables and scored W matrix
+
+The app can open interactive tables containing unrotated and rotated respondent
+loadings. Selected covariates are appended to these tables when available. The
+scored W matrix can also be opened for inspection.
+
+<!-- SCREENSHOT PLACEHOLDER: PCA loadings table
+Include a screenshot of the rotated loadings table or the scored W viewer.
+Suggested filename: vignettes/figures/shiny-pca-loadings.png
+-->
+
+## PCA Regressions tab
+
+This tab supports statement-content interpretation. For each retained component,
+its combination scores are regressed on the dummy variables that generated `W`.
+The coefficients indicate which original statements are positively or
+negatively associated with the component.
+
+For a grouped one-per-group design, one variable from each group is omitted as a
+baseline because all dummy variables within a group sum to one. Coefficients are
+therefore interpreted relative to the omitted statement in the same group.
+
+Choose between:
+
+- standardised coefficients, which facilitate comparison among predictors; and
+- unstandardised coefficients, which retain the original model scale.
+
+The tab provides:
+
+- a regression summary for the selected component;
+- an interactive coefficient matrix;
+- a coefficient heatmap across components;
+- PNG and PDF downloads of the heatmap.
+
+An essentially perfect fit may occur because combination scores are derived
+from the same dummy design used as predictors. In that situation, coefficient
+standard errors and p-values may be unreliable, while the coefficient pattern
+can still support component interpretation.
+
+<!-- SCREENSHOT PLACEHOLDER: PCA regression heatmap
+Include a screenshot of the standardised coefficient heatmap.
+Suggested filename: vignettes/figures/shiny-statement-regressions.png
+-->
+
+## Output tab
+
+The Output tab relates respondent loadings to respondent-level covariates. It is
+conceptually distinct from the PCA Regressions tab: the latter explains
+combination scores using statements, whereas the Output tab explains respondent
+loadings using metadata.
+
+<!-- SCREENSHOT PLACEHOLDER: Output tab overview
+Include a screenshot showing component and covariate selectors together with
+one respondent-loading plot.
+Suggested filename: vignettes/figures/shiny-output-overview.png
+-->
+
+### Filtering and model selection
+
+Respondents can again be filtered by covariate values or identifiers. The
+maximum number of displayed respondents can also be limited to keep plots
+readable.
+
+Select the component and covariates, then click **Run models**. Covariates with
+no variation after filtering cannot be fitted. If no covariates were selected
+on the Data tab, the app displays an informational message rather than a model.
+Return to the Data tab, select covariates, and click **Next** again.
+
+### Respondent loading map
+
+The loading map plots respondents using two selected components. Points can be
+coloured or otherwise grouped using available covariates. This view helps reveal
+clusters, gradients, and unusual respondents.
+
+<!-- SCREENSHOT PLACEHOLDER: Respondent loading map
+Include a screenshot of a PC1-PC2 respondent map coloured by Country_code or
+another categorical covariate.
+Suggested filename: vignettes/figures/shiny-respondent-map.png
+-->
+
+### Regression tables and covariate plots
+
+The regression table summarises associations between selected respondent
+covariates and component loadings. A detailed model summary is available for an
+individual component. The final plot displays component loadings against a
+selected covariate, with controls appropriate to the covariate type.
+
+These regressions should be treated as interpretive aids. Their validity still
+depends on sample size, residual behaviour, coding choices, and the structure of
+the respondent data.
+
+<!-- SCREENSHOT PLACEHOLDER: Covariate relationship
+Include one categorical boxplot or one continuous-covariate scatter plot from
+the Component loadings by covariate section.
+Suggested filename: vignettes/figures/shiny-covariate-plot.png
+-->
+
+## Worked example with the gardening data
+
+The following sequence demonstrates the entire graphical workflow.
+
+### Data settings
+
+1. Open the Data tab.
+2. Select **Use built-in dataset** and choose **Gardening**.
+3. Retain the following analysis columns:
+
+```text
+How_important_making_beautiful
+How_importnat_conservation
+How_important_making_money
+How_important_sel_supply
+Time_spend
+How_often_plant
+How_important_pesticide
+```
+
+4. Select respondent covariates such as:
+
+```text
+Country_code
+Age_group
+Garden_size
+Gardening_experience
+```
+
+5. Choose **Standardise (z-score)**.
+6. Define two groups:
+   - **Motivation**: the four variables beginning with `How_important_` or
+     `How_importnat_`;
+   - **Management**: `Time_spend`, `How_often_plant`, and
+     `How_important_pesticide`.
+7. Click **Next**.
+
+This grouping produces `4 * 3 = 12` synthetic combinations because one statement
+is selected from each group.
+
+### Dummies and PCA
+
+1. Inspect the dummy matrix and confirm that every row contains one Motivation
+   variable and one Management variable.
+2. Inspect the W heatmap.
+3. Click **Proceed to calculations**.
+4. Retain a small number of components initially, for example three or four.
+5. Apply Varimax rotation and examine the scree plot and respondent loadings.
+
+### Interpretation
+
+1. In PCA Regressions, compare standardised coefficients across components.
+2. Identify statements with the strongest positive and negative coefficients.
+3. In Output, select respondent covariates and run the respondent regressions.
+4. Compare the coefficient pattern with the respondent loading map and
+   covariate plots.
+5. Name components only after considering all of these outputs together with
+   substantive knowledge of the survey.
+
+<!-- SCREENSHOT PLACEHOLDER: Worked example montage
+Optionally include a multi-panel figure containing the gardening D matrix,
+scree plot, statement-coefficient heatmap, and respondent loading map.
+Suggested filename: vignettes/figures/shiny-gardening-workflow.png
+-->
+
+## Common issues
+
+### Changes made on the Data tab are not reflected elsewhere
+
+Click **Next** again. The app deliberately freezes a data snapshot so that later
+calculations do not change while controls are being edited.
+
+### The design contains far more combinations than expected
+
+Check whether groups were defined and whether every intended statement was
+assigned. Without a valid grouping, the app uses the full binary design, whose
+size grows as `2^m` for `m` statements.
+
+### There are no covariate controls in the Output tab
+
+Return to the Data tab, select one or more covariate columns, and click **Next**
+again.
+
+### A CSV appears as one column
+
+The delimiter was probably not recognised. Save the file with a conventional
+comma, semicolon, or tab delimiter, or use RDS/RDA instead.
+
+### PCA reports insufficient variance
+
+Some respondents may have constant values across all synthetic combinations,
+or filtering may have retained too few informative respondents. Review the
+selected statements, transformations, and filters.
+
+### The app warns about a large number of combinations
+
+Reduce the number of analysis statements, define meaningful groups, or perform
+a random-design analysis through the non-Shiny API.
+
+## Reproducing an analysis in R
+
+The Shiny application is intended for interactive exploration. For a fully
+scripted and reproducible analysis, use the package functions after finalising
+the choices in the app. The corresponding grouped gardening analysis would be:
+
+```{r reproduce, eval=FALSE}
+data("gardening", package = "GQR")
+
+analysis_columns <- c(
+  "How_important_making_beautiful",
+  "How_importnat_conservation",
+  "How_important_making_money",
+  "How_important_sel_supply",
+  "Time_spend",
+  "How_often_plant",
+  "How_important_pesticide"
+)
+
+groups <- data.frame(
+  group = c(rep("Motivation", 4), rep("Management", 3)),
+  variable = analysis_columns
+)
+
+fit <- gqr_analysis(
+  data = gardening,
+  analysis_cols = analysis_columns,
+  id_col = "ID",
+  covariate_cols = c(
+    "Country_code",
+    "Age_group",
+    "Garden_size",
+    "Gardening_experience"
+  ),
+  transform = "standardise",
+  dummy_mode = "group_one_per",
+  groups = groups,
+  n_components = 4,
+  rotation = "varimax"
+)
+
+fit
+summary(fit)$variance
+```
+
+## References
+
+Dentinho, T. P., Kourtit, K., & Nijkamp, P. (2023). Generalized Q analysis as a
+new tool in social science research: A pedagogical introduction. *Eastern
+Journal of European Studies*, **14**(2), 5–21.
+doi:10.47743/ejes-2023-0201.
+
+Varga-Szilay, Z., Šerić Jelaska, L., Vilumets, S., Barševskis, A., Benedek, K.,
+Bevk, D., Jojczyk, A., Krištín, A., Růžičková, J., Veromann, E., Fetykó, K. G.,
+Szövényi, G., & Pozsgai, G. (2026). A multilingual, multi-country dataset on
+gardening and biodiversity awareness across Central and Eastern Europe.
+*Scientific Data*. doi:10.1038/s41597-026-07887-9.

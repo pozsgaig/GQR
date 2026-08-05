@@ -8,9 +8,25 @@ dummiesTabUI <- function(id) {
     shiny::div(
       class = "q-container",
       shiny::h2("Dummy combinations and W matrix"),
+      shiny::div(
+        class = "alert alert-info",
+        shiny::h4("What are dummies?"),
+        shiny::p(
+          "Here, dummy means a binary (0/1) indicator used to construct synthetic combined statements. Each column of the dummy matrix D represents one original analysis statement, and each row represents one possible or sampled combination of statements."
+        ),
+        shiny::tags$ul(
+          shiny::tags$li(shiny::strong("1"), " = the statement is included in the synthetic combination"),
+          shiny::tags$li(shiny::strong("0"), " = the statement is not included")
+        ),
+        shiny::p(
+          "For example, for statements A, B, and C, the row (1, 0, 1) represents a synthetic statement containing A and C but not B. These indicators are not artificial respondents and do not represent missing data."
+        ),
+        shiny::p(
+          "In a full design, D contains all permitted 0/1 patterns. In a grouped design, exactly one statement is selected from each group. In a random design, a requested number of patterns is sampled."
+        )
+      ),
       shiny::p(
-        "W is constructed as W = D %*% t(V), where D contains all binary combinations ",
-        "over the selected analysis variables and V are respondents' scores on those variables."
+        "W is constructed as W = D %*% t(V). Because D contains 0/1 indicators, each value in W is the sum of a respondent's scores for the statements marked 1 in the corresponding row of D."
       ),
       shiny::uiOutput(ns("dummy_info")),
       shiny::verbatimTextOutput(ns("dummy_summary")),

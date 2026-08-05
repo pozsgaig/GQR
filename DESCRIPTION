@@ -19,6 +19,8 @@ Description: Implements Generalised Q analysis as introduced by Dentinho,
     dataset described by Varga-Szilay et al. (2026)
     <doi:10.1038/s41597-026-07887-9>.
 License: GPL (>= 3)
+URL: https://github.com/pozsgaig/GQR
+BugReports: https://github.com/pozsgaig/GQR/issues
 Encoding: UTF-8
 LazyData: true
 Depends:
