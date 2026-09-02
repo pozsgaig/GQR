@@ -55,8 +55,25 @@ $(document).on('shown.bs.modal', '.pca-modal', function () {
 
     div(
       class = "q-container",
-      h2("PCA on W matrix"),
-      p("Principal component analysis of the Generalised Q W matrix (combinations × respondents)."),
+      h2("Principal Component Analysis"),
+      p("Extract latent respondent patterns from the Generalised Q synthetic-statement matrix."),
+
+      gqr_info_box(
+        "What is calculated on this tab?",
+        p(
+          "GQR analyses the W matrix with synthetic statement combinations in rows and respondents in columns. PCA scores therefore describe the synthetic combinations, while PCA loadings describe respondents."
+        ),
+        p(
+          "Ordinary PCA uses the standard centred/scaled PCA solution. For large designs, GQR can compute the same PCA exactly in the smaller statement space without materialising the complete W matrix."
+        ),
+        p(
+          "SPSS-style mode instead uses the respondent correlation matrix, smooths it when necessary, and applies psych::principal() with regression-type component scores. This preserves compatibility with the original GQR implementation and SPSS-oriented calculations."
+        ),
+        p(
+          "Varimax is an orthogonal rotation used to make retained components easier to interpret. Rotation can change component order and orientation, but not the retained multidimensional subspace."
+        ),
+        open = TRUE
+      ),
 
       fluidRow(
         column(
@@ -85,6 +102,9 @@ $(document).on('shown.bs.modal', '.pca-modal', function () {
           checkboxInput(ns("SPSS"), "SPSS-style (correlation-based) scoring", value = FALSE),
           checkboxInput(ns("impute_mean"), "Mean-impute missing values (SPSS mode)", value = TRUE),
           br(),
+          actionButton(ns("run_pca"), "Run / update PCA", class = "btn-primary"),
+          br(), br(),
+          uiOutput(ns("pca_progress")),
           actionButton(ns("show_scored_W"), "Show W matrix with PCA scores")
         )
       ),
@@ -160,75 +180,269 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
 
 
 
-    # ---------- W matrix used for PCA ----------
-    # This remains independent of the PCA-table display filters.
-    W_for_pca <- reactive({
-      W <- NULL
+    # ---------- background PCA calculation ----------
+    pca_value <- reactiveVal(NULL)
+    pca_task <- reactiveVal(NULL)
+    pca_progress <- reactiveVal(list(value = 0, message = "Waiting"))
+    pca_error <- reactiveVal(NULL)
+    pca_settings <- reactiveVal(NULL)
 
-      if (!is.null(dummies_state) && !is.null(dummies_state$W_filtered)) {
-        W <- dummies_state$W_filtered()
-      } else if (!is.null(dummies_state) && !is.null(dummies_state$W)) {
-        W <- dummies_state$W()
+    pca_input_data <- reactive({
+      if (!is.null(dummies_state) && !is.null(dummies_state$filtered_data)) {
+        dummies_state$filtered_data()
       } else {
-        W <- make_W(data_state)
+        pca_data_trans()
+      }
+    })
+
+    start_pca_task <- function() {
+      req(!is.null(dummies_state), dummies_state$D())
+      df <- pca_input_data()
+      D <- dummies_state$D()
+      req(df, D)
+
+      validate(
+        need(nrow(df) > 1, "Not enough respondents remain for PCA.")
+      )
+
+      old_task <- pca_task()
+      if (!is.null(old_task)) {
+        gqr_app_stop_background(old_task)
       }
 
-      req(W)
+      pca_value(NULL)
+      pca_error(NULL)
+      pca_progress(list(value = 0, message = "Starting PCA"))
 
-      validate(
-        need(ncol(W) > 1, "Not enough respondents remain for PCA.")
-      )
+      id_col <- if ("ID" %in% names(df)) "ID" else NULL
 
-      W
-    })
-
-
-    # ---------- remove zero-variance respondents ----------
-    W_clean <- reactive({
-      W <- W_for_pca()
-      req(W)
-
-      vars_sd <- apply(W, 2, sd, na.rm = TRUE)
-      keep <- vars_sd > 0
-      W_use <- W[, keep, drop = FALSE]
-
-      validate(
-        need(ncol(W_use) > 1, "Not enough respondent variance for PCA.")
-      )
-
-      W_use
-    })
-
-    # ---------- PCA fits ----------
-    pca_unrotated <- reactive({
-      W_use <- W_clean()
-      req(W_use)
-
-      gqr_app_pca(
-        W = W_use,
-        scale. = isTRUE(input$scale),
+      settings <- list(
+        n_components = as.integer(input$n_comp),
+        rotation = input$rotation,
         center = isTRUE(input$center),
-        rotate = "none",
-        naxis = input$n_comp,
+        scale = isTRUE(input$scale),
         SPSS = isTRUE(input$SPSS),
-        add_scores = TRUE,
         impute_mean = isTRUE(input$impute_mean)
+      )
+      pca_settings(settings)
+
+      if (!isTRUE(input$SPSS)) {
+        task <- gqr_app_start_background(
+          task = "pca_design",
+          args = list(
+            data = df,
+            D = D,
+            analysis_cols = colnames(D),
+            id_col = id_col,
+            n_components = settings$n_components,
+            rotation = settings$rotation,
+            center = settings$center,
+            scale = settings$scale,
+            na_action = "error"
+          )
+        )
+      } else {
+        task <- gqr_app_start_background(
+          task = "pca_matrix",
+          args = list(
+            data = if (inherits(df, "gqr_prepared_data")) df else
+              GQR::gqr_prepare_data(
+                data = df,
+                analysis_cols = colnames(D),
+                id_col = id_col
+              ),
+            D = D,
+            na_action = if (settings$impute_mean) "mean" else "error",
+            pca_args = list(
+              n_components = settings$n_components,
+              rotation = settings$rotation,
+              center = settings$center,
+              scale = settings$scale,
+              method = "correlation",
+              impute = if (settings$impute_mean) "mean" else "none"
+            )
+          )
+        )
+      }
+
+      pca_task(task)
+    }
+
+    observeEvent(
+      if (!is.null(dummies_state) && !is.null(dummies_state$can_calc)) {
+        dummies_state$can_calc()
+      } else {
+        FALSE
+      },
+      {
+        if (isTRUE(dummies_state$can_calc())) {
+          start_pca_task()
+        }
+      },
+      ignoreInit = TRUE
+    )
+
+    observeEvent(input$run_pca, {
+      if (!is.null(dummies_state) &&
+          !is.null(dummies_state$can_calc) &&
+          !isTRUE(dummies_state$can_calc())) {
+        showNotification(
+          "Return to the Dummies tab and click 'Proceed to calculations' first.",
+          type = "warning",
+          duration = 5
+        )
+        return(invisible(NULL))
+      }
+      start_pca_task()
+    }, ignoreInit = TRUE)
+
+    observe({
+      invalidateLater(250, session)
+      task <- pca_task()
+      if (is.null(task)) return(invisible(NULL))
+
+      pca_progress(gqr_app_read_progress(task$status_file))
+
+      if (!isTRUE(task$process$is_alive())) {
+        status <- task$process$get_exit_status()
+
+        if (identical(status, 0L)) {
+          result <- tryCatch(
+            task$process$get_result(),
+            error = function(e) e
+          )
+
+          if (inherits(result, "error")) {
+            pca_error(conditionMessage(result))
+            pca_value(NULL)
+          } else {
+            pca_value(result)
+            pca_error(NULL)
+            pca_progress(list(value = 1, message = "PCA ready"))
+          }
+        } else {
+          err <- tryCatch(
+            {
+              task$process$get_result()
+              ""
+            },
+            error = function(e) conditionMessage(e)
+          )
+          if (!nzchar(err)) {
+            err <- "The PCA calculation stopped before completion."
+          }
+          pca_error(err)
+          pca_value(NULL)
+        }
+
+        if (!is.null(task$status_file) && file.exists(task$status_file)) {
+          unlink(task$status_file)
+        }
+        pca_task(NULL)
+      }
+    })
+
+    observeEvent(input$cancel_pca, {
+      task <- pca_task()
+      if (!is.null(task)) {
+        gqr_app_stop_background(task)
+      }
+      pca_task(NULL)
+      pca_value(NULL)
+      pca_error("PCA calculation cancelled. Change the settings if needed, then click 'Run / update PCA'.")
+      pca_progress(list(value = 0, message = "Cancelled"))
+    }, ignoreInit = TRUE)
+
+    output$pca_progress <- renderUI({
+      task <- pca_task()
+      err <- pca_error()
+      result <- pca_value()
+
+      if (!is.null(task)) {
+        p <- pca_progress()
+        value <- round(100 * (p$value %||% 0))
+        message <- p$message %||% "Working..."
+
+        return(
+          div(
+            class = "alert alert-info",
+            strong(if (isTRUE(input$SPSS)) {
+              "Running full-W correlation PCA: "
+            } else {
+              "Running compact PCA: "
+            }),
+            span(message),
+            div(
+              class = "progress",
+              style = "margin-top:8px; margin-bottom:8px;",
+              div(
+                class = "progress-bar progress-bar-striped active",
+                role = "progressbar",
+                style = sprintf("width:%d%%", value),
+                sprintf("%d%%", value)
+              )
+            ),
+            actionButton(
+              ns("cancel_pca"),
+              "Stop calculation",
+              class = "btn-danger btn-sm"
+            )
+          )
+        )
+      }
+
+      if (!is.null(err)) {
+        return(
+          div(
+            class = "alert alert-warning",
+            err
+          )
+        )
+      }
+
+      if (!is.null(result)) {
+        settings <- pca_settings()
+        return(
+          div(
+            class = "alert alert-success",
+            if (isTRUE(settings$SPSS)) {
+              "PCA ready (full-W correlation mode)."
+            } else {
+              "PCA ready (compact exact design algorithm; full W was not required)."
+            }
+          )
+        )
+      }
+
+      helpText("Click 'Run / update PCA' after changing PCA settings.")
+    })
+
+    # The background process computes one PCA only. Both unrotated and selected
+    # results are retained in the same object, avoiding the previous duplicate
+    # PCA calculation.
+    pca_unrotated <- reactive({
+      pr <- pca_value()
+      req(pr)
+
+      list(
+        eigenvalues = unname(pr$eigenvalues),
+        var_expl = unname(pr$variance_explained),
+        loadings_rot = pr$loadings_unrotated,
+        scores = pr$scores_unrotated,
+        sdev = sqrt(unname(pr$eigenvalues))
       )
     })
 
     pca_selected <- reactive({
-      W_use <- W_clean()
-      req(W_use)
+      pr <- pca_value()
+      req(pr)
 
-      gqr_app_pca(
-        W = W_use,
-        scale. = isTRUE(input$scale),
-        center = isTRUE(input$center),
-        rotate = input$rotation,
-        naxis = input$n_comp,
-        SPSS = isTRUE(input$SPSS),
-        add_scores = TRUE,
-        impute_mean = isTRUE(input$impute_mean)
+      list(
+        eigenvalues = unname(pr$eigenvalues),
+        var_expl = unname(pr$variance_explained),
+        loadings_rot = pr$loadings,
+        scores = pr$scores,
+        sdev = sqrt(unname(pr$eigenvalues))
       )
     })
 
@@ -237,11 +451,17 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
       pr <- pca_selected()
       req(pr)
 
+      settings <- pca_settings()
       cat("Number of components:", ncol(pr$loadings_rot), "\n")
-      cat("Rotation:", input$rotation, "\n")
-      cat("SPSS mode:", isTRUE(input$SPSS), "\n")
-      cat("Centred:", isTRUE(input$center), "\n")
-      cat("Scaled:", isTRUE(input$scale), "\n")
+      cat("Rotation:", settings$rotation, "\n")
+      cat("SPSS mode:", isTRUE(settings$SPSS), "\n")
+      cat("Centred:", isTRUE(settings$center), "\n")
+      cat("Scaled:", isTRUE(settings$scale), "\n")
+      cat(
+        "Computation:",
+        if (isTRUE(settings$SPSS)) "full W / correlation mode" else "compact exact design PCA",
+        "\n"
+      )
     })
 
     output$pca_eigen <- renderPrint({
@@ -254,7 +474,7 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
       pr <- pca_unrotated()
       req(pr)
 
-      k <- min(as.integer(input$n_comp), length(pr$var_expl))
+      k <- length(pr$var_expl)
 
       out <- data.frame(
         Component = paste0("PC", seq_len(k)),
@@ -270,7 +490,7 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
       pr <- pca_unrotated()
       req(pr)
 
-      k <- min(as.integer(input$n_comp), length(pr$eigenvalues))
+      k <- length(pr$eigenvalues)
 
       df <- data.frame(
         Component = seq_len(k),
@@ -352,7 +572,7 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
       req(pr)
 
       L <- as.matrix(pr$loadings_rot)
-      k <- min(as.integer(input$n_comp), ncol(L))
+      k <- ncol(L)
       L <- L[, seq_len(k), drop = FALSE]
 
       df <- as.data.frame(L)
@@ -362,7 +582,7 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
     })
 
     loadings_rot_df <- reactive({
-      if (!identical(input$rotation, "varimax")) {
+      if (!identical(pca_settings()$rotation, "varimax")) {
         return(loadings_unrot_df())
       }
 
@@ -370,7 +590,7 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
       req(pr)
 
       L <- as.matrix(pr$loadings_rot)
-      k <- min(as.integer(input$n_comp), ncol(L))
+      k <- ncol(L)
       L <- L[, seq_len(k), drop = FALSE]
 
       df <- as.data.frame(L)
@@ -459,7 +679,7 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
     observeEvent(input$show_rotated_loadings, {
       showModal(
         modalDialog(
-          title = if (identical(input$rotation, "varimax")) {
+          title = if (identical(pca_settings()$rotation, "varimax")) {
             "Rotated PCA loadings"
           } else {
             "PCA loadings (no rotation applied)"
@@ -476,7 +696,7 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
     # ---------- downloads for scree ----------
     output$download_scree_png <- downloadHandler(
       filename = function() {
-        paste0("pca_variance_scree_", input$rotation, ".png")
+        paste0("pca_variance_scree_", pca_settings()$rotation, ".png")
       },
       content = function(file) {
         ggplot2::ggsave(
@@ -493,7 +713,7 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
 
     output$download_scree_pdf <- downloadHandler(
       filename = function() {
-        paste0("pca_variance_scree_", input$rotation, ".pdf")
+        paste0("pca_variance_scree_", pca_settings()$rotation, ".pdf")
       },
       content = function(file) {
         ggplot2::ggsave(
@@ -508,15 +728,18 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
     )
 
     # ---------- W with scores ----------
-    # Full PCA result object; display filters do not feed back into PCA.
+    # PCA regressions only need the component scores, so keep this object small.
+    # A W preview is materialised only when the user opens the table.
     scored_W <- reactive({
-      pr <- pca_selected()
+      pr <- pca_value()
       req(pr)
-      as.data.frame(pr$data_with_scores)
+      out <- as.data.frame(pr$scores, check.names = FALSE)
+      out$Combination <- rownames(pr$scores)
+      out[, c("Combination", setdiff(names(out), "Combination")), drop = FALSE]
     })
 
     scored_W_covariates <- reactive({
-      df <- pca_data_trans()
+      df <- pca_input_data()
       covs <- pca_covariate_cols()
       req(df)
 
@@ -558,26 +781,47 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
     })
 
     display_scored_W <- reactive({
-      df <- scored_W()
+      pr <- pca_value()
+      D <- dummies_state$D()
+      df <- pca_input_data()
       ids <- filtered_scored_W_ids()
-      req(df, ids)
+      req(pr, D, df, ids)
 
-      resp_cols <- intersect(ids, colnames(df))
-      pc_cols <- grep("^PC[0-9]+$", colnames(df), value = TRUE)
-
+      ids <- intersect(ids, pr$respondents_used)
       mode <- input$score_sample_mode %||% "first"
 
-      if (length(resp_cols) > 200) {
+      if (length(ids) > 200) {
         if (mode == "last") {
-          resp_cols <- tail(resp_cols, 200)
+          ids <- tail(ids, 200)
         } else if (mode == "random") {
-          resp_cols <- sort(sample(resp_cols, 200))
+          ids <- sample(ids, 200)
         } else {
-          resp_cols <- head(resp_cols, 200)
+          ids <- head(ids, 200)
         }
       }
 
-      df[, c(resp_cols, pc_cols), drop = FALSE]
+      validate(need(length(ids) > 0, "No respondents match the display filters."))
+
+      keep <- match(ids, as.character(df$ID))
+      keep <- keep[!is.na(keep)]
+      df_sub <- df[keep, , drop = FALSE]
+
+      # Keep the interactive table bounded. The PCA itself still uses every
+      # combination.
+      row_limit <- min(nrow(D), 10000L)
+      rows <- seq_len(row_limit)
+
+      W_display <- GQR::gqr_make_w(
+        data = df_sub,
+        analysis_cols = colnames(D),
+        D = D,
+        id_col = "ID",
+        rows = rows,
+        algorithm = "matmul"
+      )
+
+      scores <- as.data.frame(pr$scores[rows, , drop = FALSE], check.names = FALSE)
+      cbind(as.data.frame(W_display, check.names = FALSE), scores)
     })
 
 
@@ -700,7 +944,7 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
     observeEvent(input$show_scored_W, {
       showModal(
         modalDialog(
-          title = "W matrix with PCA scores (display filters only; max. 200 respondents shown)",
+          title = "W matrix with PCA scores (display only; max. 200 respondents and 10,000 combinations shown)",
           size = "l",
           easyClose = TRUE,
           footer = modalButton("Close"),
@@ -719,14 +963,17 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
       as.data.frame(pr$scores)
     })
 
-    # ---------- expose state to Output tab ----------
-    # Output tab remains independent of the PCA-table filters.
+    # ---------- expose state to Component–Covariate Regression tab ----------
+    # Component–Covariate Regression remains independent of the PCA-table filters.
     list(
+      # Keep the full package result available so downstream GUI modules can
+      # delegate analysis to the same exported functions used in scripts.
+      result = pca_value,
       scores = scores_reactive,
       scored_W = scored_W,
       loadings_unrot = reactive(as.data.frame(pca_unrotated()$loadings_rot)),
       loadings_rot = reactive(as.data.frame(pca_selected()$loadings_rot)),
-      rotation = reactive(input$rotation)
+      rotation = reactive({ req(pca_settings()); pca_settings()$rotation })
     )
   })
 }

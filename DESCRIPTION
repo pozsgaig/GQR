@@ -1,7 +1,7 @@
 Package: GQR
 Type: Package
 Title: Generalised Q Analysis in R
-Version: 0.1.0
+Version: 0.1.1
 Authors@R: c(
     person("Gábor", "Pozsgai", role = c("aut", "cre"),
            email = "pozsgaig@coleoptera.hu"),
@@ -26,16 +26,18 @@ LazyData: true
 Depends:
     R (>= 4.1.0)
 Imports:
+    psych,
     stats,
     tools,
     utils
 Suggests:
-    broom,
+    callr,
     dplyr,
     DT,
     ggnewscale,
     ggplot2,
     knitr,
+    patchwork,
     Polychrome,
     purrr,
     RColorBrewer,

@@ -28,8 +28,10 @@ for \code{method = "correlation"}.}
 
 \item{center, scale}{Logical centring and scaling settings for ordinary PCA.}
 
-\item{method}{One of \code{"prcomp"} or \code{"correlation"}. The latter uses a
-smoothed respondent correlation matrix and regression-type scores.}
+\item{method}{One of \code{"prcomp"} or \code{"correlation"}. The latter reproduces
+the SPSS-style workflow of the original GQR application using a smoothed
+respondent correlation matrix, \code{\link[psych:principal]{psych::principal()}}, and regression-type
+scores.}
 
 \item{impute}{One of \code{"none"} or \code{"mean"} for non-finite W values.}
 
@@ -54,8 +56,12 @@ with \code{D}, while loading rows align with respondent identifiers. Transposing
 would answer a different analytical question.
 
 Varimax is orthogonal. It changes the component orientation but not the
-retained subspace. Component retention and scaling should be justified from
-the research design rather than selected solely from defaults.
+retained subspace. For \code{method = "correlation"}, GQR deliberately uses the
+same \code{psych::principal()} implementation as the original Shiny workflow so
+that rotated component ordering, signs, and downstream statement-regression
+coefficients remain compatible with earlier GQR/SPSS-style analyses.
+Component retention and scaling should be justified from the research design
+rather than selected solely from defaults.
 }
 \examples{
 dat <- gqr_example_data("dummy_data")

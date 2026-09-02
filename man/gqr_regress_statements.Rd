@@ -14,7 +14,7 @@ gqr_regress_statements(
 )
 }
 \arguments{
-\item{pca}{A result from \code{\link[=gqr_pca]{gqr_pca()}}.}
+\item{pca}{A result from \code{\link[=gqr_pca]{gqr_pca()}} or \code{\link[=gqr_pca_design]{gqr_pca_design()}}.}
 
 \item{D}{The design matrix used to construct the corresponding W matrix.}
 

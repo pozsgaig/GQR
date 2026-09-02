@@ -7,7 +7,7 @@
 gqr_regress_respondents(pca, metadata, id_col, covariates, components = NULL)
 }
 \arguments{
-\item{pca}{A result from \code{\link[=gqr_pca]{gqr_pca()}}.}
+\item{pca}{A result from \code{\link[=gqr_pca]{gqr_pca()}} or \code{\link[=gqr_pca_design]{gqr_pca_design()}}.}
 
 \item{metadata}{Respondent-level data containing identifiers and covariates.}
 
@@ -45,17 +45,11 @@ fit <- gqr_analysis(
   respondent_regression = FALSE
 )
 
-metadata <- transform(
-  dat,
-  Segment = rep(c("A", "B"), length.out = nrow(dat)),
-  Sequence = seq_len(nrow(dat))
-)
-
 respondent_models <- gqr_regress_respondents(
   pca = fit$pca,
-  metadata = metadata,
+  metadata = dat,
   id_col = "Respondent",
-  covariates = c("Segment", "Sequence")
+  covariates = c("Numeric_covariate", "Factor_covariate")
 )
 head(respondent_models$coefficients)
 

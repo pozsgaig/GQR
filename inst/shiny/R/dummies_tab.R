@@ -8,9 +8,8 @@ dummiesTabUI <- function(id) {
     shiny::div(
       class = "q-container",
       shiny::h2("Dummy combinations and W matrix"),
-      shiny::div(
-        class = "alert alert-info",
-        shiny::h4("What are dummies?"),
+      gqr_info_box(
+        "What are dummies?",
         shiny::p(
           "Here, dummy means a binary (0/1) indicator used to construct synthetic combined statements. Each column of the dummy matrix D represents one original analysis statement, and each row represents one possible or sampled combination of statements."
         ),
@@ -23,13 +22,15 @@ dummiesTabUI <- function(id) {
         ),
         shiny::p(
           "In a full design, D contains all permitted 0/1 patterns. In a grouped design, exactly one statement is selected from each group. In a random design, a requested number of patterns is sampled."
-        )
+        ),
+        open = TRUE
       ),
       shiny::p(
         "W is constructed as W = D %*% t(V). Because D contains 0/1 indicators, each value in W is the sum of a respondent's scores for the statements marked 1 in the corresponding row of D."
       ),
       shiny::uiOutput(ns("dummy_info")),
       shiny::verbatimTextOutput(ns("dummy_summary")),
+      shiny::uiOutput(ns("dummy_progress")),
 
       # ---- filters (collapsible) ----
       shiny::div(
@@ -146,9 +147,10 @@ dummiesTabServer <- function(id, data_state, active_tab) {
       s$groups
     })
 
-    shiny::observeEvent(snapshot(), {
-      can_calc(FALSE)
-    }, ignoreInit = TRUE)
+    D_value <- shiny::reactiveVal(NULL)
+    D_task <- shiny::reactiveVal(NULL)
+    D_progress <- shiny::reactiveVal(list(value = 0, message = "Waiting"))
+    D_error <- shiny::reactiveVal(NULL)
 
     dummy_mode_used <- shiny::reactive({
       g <- groups_frozen()
@@ -157,65 +159,205 @@ dummiesTabServer <- function(id, data_state, active_tab) {
       if (isTRUE(has_assigned)) "group_one_per" else "all"
     })
 
-    D_full <- shiny::reactive({
+    design_estimate <- shiny::reactive({
       shiny::req(snapshot_ready())
-
-      df <- data_trans_frozen()
       vars <- analysis_cols_frozen()
-      shiny::req(df, vars)
-
+      df <- data_trans_frozen()
       mode <- dummy_mode_used()
 
-      D <- if (mode == "group_one_per") {
-        groups <- groups_frozen()
-        shiny::req(groups, nrow(groups) > 0)
-
-        gqr_generate_all_dummies(
-          nvars = length(vars),
-          varnames = vars,
-          groups = groups,
-          mode = "group_one_per"
+      if (mode == "group_one_per") {
+        GQR::gqr_estimate_design(
+          variables = vars,
+          mode = mode,
+          groups = groups_frozen(),
+          n_respondents = nrow(df),
+          allow_ungrouped = TRUE
         )
       } else {
-        gqr_generate_all_dummies(
-          nvars = length(vars),
-          varnames = vars,
-          mode = "all"
+        GQR::gqr_estimate_design(
+          variables = vars,
+          mode = mode,
+          n_respondents = nrow(df)
+        )
+      }
+    })
+
+    start_dummy_task <- function() {
+      shiny::req(snapshot_ready())
+      vars <- analysis_cols_frozen()
+      mode <- dummy_mode_used()
+
+      old_task <- D_task()
+      if (!is.null(old_task)) {
+        gqr_app_stop_background(old_task)
+      }
+
+      D_value(NULL)
+      D_error(NULL)
+      D_progress(list(value = 0, message = "Starting dummy design"))
+
+      args <- list(
+        variables = vars,
+        mode = mode,
+        include_empty = TRUE,
+        max_patterns = 1000000L
+      )
+      if (mode == "group_one_per") {
+        args$groups <- groups_frozen()
+        args$allow_ungrouped <- TRUE
+      }
+
+      D_task(
+        gqr_app_start_background(
+          task = "dummies",
+          args = args
+        )
+      )
+    }
+
+    shiny::observeEvent(snapshot(), {
+      can_calc(FALSE)
+      start_dummy_task()
+    }, ignoreInit = TRUE, ignoreNULL = TRUE)
+
+    shiny::observe({
+      shiny::invalidateLater(250, session)
+      task <- D_task()
+      if (is.null(task)) return(invisible(NULL))
+
+      D_progress(gqr_app_read_progress(task$status_file))
+
+      if (!isTRUE(task$process$is_alive())) {
+        status <- task$process$get_exit_status()
+
+        if (identical(status, 0L)) {
+          result <- tryCatch(
+            task$process$get_result(),
+            error = function(e) e
+          )
+
+          if (inherits(result, "error")) {
+            D_error(conditionMessage(result))
+            D_value(NULL)
+          } else {
+            D_value(result)
+            D_error(NULL)
+            D_progress(list(value = 1, message = "Dummy design ready"))
+          }
+        } else {
+          err <- tryCatch(
+            {
+              task$process$get_result()
+              ""
+            },
+            error = function(e) conditionMessage(e)
+          )
+          if (!nzchar(err)) {
+            err <- "The dummy calculation stopped before completion."
+          }
+          D_error(err)
+          D_value(NULL)
+        }
+
+        if (!is.null(task$status_file) && file.exists(task$status_file)) {
+          unlink(task$status_file)
+        }
+        D_task(NULL)
+      }
+    })
+
+    shiny::observeEvent(input$cancel_dummies, {
+      task <- D_task()
+      if (!is.null(task)) {
+        gqr_app_stop_background(task)
+      }
+      D_task(NULL)
+      D_value(NULL)
+      D_error("Dummy calculation cancelled. You can restart it without restarting R.")
+      D_progress(list(value = 0, message = "Cancelled"))
+    }, ignoreInit = TRUE)
+
+    shiny::observeEvent(input$retry_dummies, {
+      start_dummy_task()
+    }, ignoreInit = TRUE)
+
+    output$dummy_progress <- shiny::renderUI({
+      if (!isTRUE(snapshot_ready())) return(NULL)
+
+      task <- D_task()
+      err <- D_error()
+      ready <- !is.null(D_value())
+
+      if (!is.null(task)) {
+        p <- D_progress()
+        value <- round(100 * (p$value %||% 0))
+        message <- p$message %||% "Working..."
+
+        return(
+          shiny::div(
+            class = "alert alert-info",
+            shiny::strong("Building dummy design: "),
+            shiny::span(message),
+            shiny::div(
+              class = "progress",
+              style = "margin-top:8px; margin-bottom:8px;",
+              shiny::div(
+                class = "progress-bar progress-bar-striped active",
+                role = "progressbar",
+                style = sprintf("width:%d%%", value),
+                sprintf("%d%%", value)
+              )
+            ),
+            shiny::actionButton(
+              ns("cancel_dummies"),
+              "Stop calculation",
+              class = "btn-danger btn-sm"
+            )
+          )
         )
       }
 
-      rownames(D) <- paste0("S", seq_len(nrow(D)))
+      if (!is.null(err)) {
+        return(
+          shiny::div(
+            class = "alert alert-warning",
+            shiny::strong(err),
+            shiny::br(),
+            shiny::actionButton(
+              ns("retry_dummies"),
+              "Restart dummy calculation",
+              class = "btn-warning btn-sm",
+              style = "margin-top:8px;"
+            )
+          )
+        )
+      }
+
+      if (ready) {
+        return(
+          shiny::div(
+            class = "alert alert-success",
+            "Dummy design ready."
+          )
+        )
+      }
+
+      NULL
+    })
+
+    D_full <- shiny::reactive({
+      shiny::req(snapshot_ready())
+      D <- D_value()
+      shiny::validate(
+        shiny::need(!is.null(D), "The dummy design is still being calculated.")
+      )
       D
     })
 
-    W_full <- shiny::reactive({
-      shiny::req(snapshot_ready())
-
-      df <- data_trans_frozen()
-      vars <- analysis_cols_frozen()
-      D <- D_full()
-
-      shiny::req(df, vars, D)
-
-      V <- as.matrix(df[, vars, drop = FALSE])
-      W <- D %*% t(V)
-
-      rownames(W) <- rownames(D)
-
-      if ("ID" %in% colnames(df)) {
-        colnames(W) <- as.character(df$ID)
-      } else {
-        num_digits <- nchar(as.character(nrow(df)))
-        colnames(W) <- sprintf(paste0("R%0", num_digits, "d"), seq_len(nrow(df)))
-      }
-
-      W
-    })
-
     dummy_count <- shiny::reactive({
-      D <- D_full()
-      shiny::req(D)
-      nrow(D)
+      estimate <- design_estimate()
+      shiny::req(estimate)
+      as.double(estimate$patterns)
     })
 
     output$dummy_summary <- shiny::renderPrint({
@@ -224,31 +366,52 @@ dummiesTabServer <- function(id, data_state, active_tab) {
         return(invisible(NULL))
       }
 
-      n <- dummy_count()
-      cat("Total dummy combinations (after current grouping):", n, "\n")
+      estimate <- design_estimate()
+      cat(
+        "Total dummy combinations (after current grouping):",
+        format(estimate$patterns, big.mark = ",", scientific = FALSE),
+        "\n"
+      )
+      cat(
+        "Estimated full W size:",
+        sprintf("%.1f MiB", estimate$w_memory_mb),
+        "\n"
+      )
+      cat(
+        "The app does not materialise the complete W matrix for PCA when the compact design algorithm can be used.\n"
+      )
     })
 
     output$slider_ui <- shiny::renderUI({
       if (!isTRUE(snapshot_ready())) {
         return(
-          shiny::helpText("Set the data on the Data tab and click 'Next' to build D and W.")
+          shiny::helpText("Set the data on the Data tab and click 'Next' to build the dummy design.")
         )
       }
 
-      W <- W_full()
-      shiny::req(W)
+      nmax <- as.integer(min(dummy_count(), .Machine$integer.max))
+      max_plot <- min(nmax, 1000L)
+      min_val <- min(10L, max_plot)
+      if (min_val < 1L) min_val <- 1L
 
-      nmax <- nrow(W)
-      min_val <- min(10, nmax)
-      if (min_val < 1) min_val <- 1
-
-      shiny::sliderInput(
-        ns("n_rows_plot"),
-        "Number of combinations (rows of W) to show",
-        min = min_val,
-        max = nmax,
-        value = nmax,
-        step = if (nmax <= 50) 1 else 10
+      shiny::tagList(
+        shiny::sliderInput(
+          ns("n_rows_plot"),
+          "Number of combinations to show in the plots",
+          min = min_val,
+          max = max_plot,
+          value = min(100L, max_plot),
+          step = if (max_plot <= 50L) 1L else 10L
+        ),
+        if (nmax > max_plot) {
+          shiny::helpText(
+            sprintf(
+              "Plots are capped at %s combinations for responsiveness; the analysis still uses all %s combinations.",
+              format(max_plot, big.mark = ","),
+              format(nmax, big.mark = ",")
+            )
+          )
+        }
       )
     })
 
@@ -353,23 +516,16 @@ dummiesTabServer <- function(id, data_state, active_tab) {
       idx
     })
 
-    filtered_W <- shiny::reactive({
-      W <- W_full()
-      shiny::req(W)
-
+    filtered_data <- shiny::reactive({
+      df <- data_trans_frozen()
       idx <- filtered_indices()
+      shiny::req(df)
 
-      validate(
+      shiny::validate(
         shiny::need(length(idx) > 0, "No respondents remain after filtering.")
       )
 
-      idx_cols <- idx[idx <= ncol(W)]
-
-      validate(
-        shiny::need(length(idx_cols) > 0, "No matching respondent columns remain in W.")
-      )
-
-      W[, idx_cols, drop = FALSE]
+      df[idx, , drop = FALSE]
     })
 
 
@@ -384,41 +540,33 @@ dummiesTabServer <- function(id, data_state, active_tab) {
       }
 
       mode <- dummy_mode_used()
-      g <- groups_frozen()
+      estimate <- design_estimate()
+      idx <- filtered_indices()
 
       msg_ui <- NULL
-      if (mode == "all" && is.null(g)) {
+      if (mode == "all") {
         msg_ui <- shiny::helpText(
-          "No groups were frozen from the Data tab, so all binary combinations are used."
+          "No groups were frozen from the Data tab, so all binary combinations are used. Full binary designs grow exponentially with the number of variables."
         )
       }
-
-      W_try <- tryCatch(W_full(), error = function(e) e)
-
-      if (inherits(W_try, "error")) {
-        msg <- conditionMessage(W_try)
-        if (!nzchar(msg)) {
-          msg <- "W could not be built from the frozen snapshot."
-        }
-
-        return(
-          shiny::tagList(
-            msg_ui,
-            shiny::p(sprintf("Dummy mode: %s", mode)),
-            shiny::p(paste("W error:", msg))
-          )
-        )
-      }
-
-      W <- W_try
-      idx <- filtered_indices()
 
       shiny::tagList(
         msg_ui,
         shiny::p(sprintf("Dummy mode: %s", mode)),
-        shiny::p(sprintf("Total combinations (rows in W): %d", nrow(W))),
-        shiny::p(sprintf("Total respondents: %d", ncol(W))),
-        shiny::p(sprintf("Respondents after filters: %d", length(idx)))
+        shiny::p(
+          sprintf(
+            "Total combinations: %s",
+            format(estimate$patterns, big.mark = ",", scientific = FALSE)
+          )
+        ),
+        shiny::p(sprintf("Total respondents: %d", nrow(data_trans_frozen()))),
+        shiny::p(sprintf("Respondents after filters: %d", length(idx))),
+        shiny::p(
+          sprintf(
+            "Estimated size of a fully materialised W matrix: %.1f MiB.",
+            estimate$w_memory_mb
+          )
+        )
       )
     })
 
@@ -523,21 +671,26 @@ dummiesTabServer <- function(id, data_state, active_tab) {
     output$W_heatmap <- shiny::renderPlot({
       shiny::req(snapshot_ready())
 
-      W <- W_full()
-      shiny::req(W)
-
-      idx <- filtered_indices()
-      if (length(idx) == 0) return(NULL)
-
-      n_cols <- ncol(W)
-      idx_cols <- idx[idx <= n_cols]
-      if (length(idx_cols) == 0) return(NULL)
+      D <- D_full()
+      df <- filtered_data()
+      vars <- analysis_cols_frozen()
+      shiny::req(D, df, vars)
 
       n_plot <- input$n_rows_plot
-      if (is.null(n_plot)) n_plot <- nrow(W)
-      n_r <- min(n_plot, nrow(W))
+      if (is.null(n_plot)) n_plot <- min(100L, nrow(D))
+      n_r <- min(as.integer(n_plot), nrow(D))
 
-      W_sub <- W[seq_len(n_r), idx_cols, drop = FALSE]
+      # W is created only for the rows needed by the plot. This avoids
+      # materialising a potentially hundreds-of-MiB matrix simply to draw a
+      # preview.
+      W_sub <- GQR::gqr_make_w(
+        data = df,
+        analysis_cols = vars,
+        D = D,
+        id_col = if ("ID" %in% names(df)) "ID" else NULL,
+        rows = seq_len(n_r),
+        algorithm = "matmul"
+      )
 
       df_long <- as.data.frame(W_sub) |>
         dplyr::mutate(Combination = dplyr::row_number()) |>
@@ -568,7 +721,7 @@ dummiesTabServer <- function(id, data_state, active_tab) {
           axis.ticks.x = ggplot2::element_blank()
         )
 
-      if (isTRUE(input$show_W_values)) {
+      if (isTRUE(input$show_W_values) && ncol(W_sub) <= 100L && nrow(W_sub) <= 200L) {
         p <- p + ggplot2::geom_text(
           ggplot2::aes(label = sprintf("%.2f", .data$Value)),
           size = 4
@@ -580,10 +733,20 @@ dummiesTabServer <- function(id, data_state, active_tab) {
 
     shiny::observeEvent(input$proceed_calc, {
       shiny::req(snapshot_ready())
+
+      if (is.null(D_value())) {
+        shiny::showNotification(
+          "The dummy design is not ready yet. Wait for it to finish, or restart the calculation if it was cancelled.",
+          type = "warning",
+          duration = 6
+        )
+        return(invisible(NULL))
+      }
+
       n <- dummy_count()
       shiny::req(n)
 
-      if (n > 1000) {
+      if (n > 100000) {
         shiny::showModal(
           shiny::modalDialog(
             title = "Large number of dummy combinations",
@@ -593,10 +756,11 @@ dummiesTabServer <- function(id, data_state, active_tab) {
               shiny::actionButton(ns("confirm_calc"), "Proceed anyway")
             ),
             paste0(
-              "The current frozen selection produces ", n, " dummy combinations. ",
-              "Running PCA on this many combinations may be slow.\n\n",
-              "You can go back to the Data tab and click 'Next' again after changing the setup, ",
-              "or click 'Proceed anyway' to continue."
+              "The current frozen selection produces ", format(n, big.mark = ","), " dummy combinations. ",
+              "GQR will use the compact statement-space PCA algorithm where possible, ",
+              "but reconstructing scores for this many combinations may still take time.\n\n",
+              "The PCA runs in a separate R process and can be stopped from the PCA tab without terminating R. ",
+              "You can also go back to the Data tab and reduce the design with groups."
             )
           )
         )
@@ -628,11 +792,12 @@ dummiesTabServer <- function(id, data_state, active_tab) {
     }, ignoreInit = TRUE)
 
     list(
-      W = W_full,           # unfiltered for reference
-      W_filtered = filtered_W,  # filtered by user
       D = D_full,
       can_calc = can_calc,
       dummy_count = dummy_count,
+      design_estimate = design_estimate,
+      filtered_indices = filtered_indices,
+      filtered_data = filtered_data,
       snapshot = snapshot
     )
   })

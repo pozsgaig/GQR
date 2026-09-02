@@ -7,10 +7,12 @@
 #'
 #' Generalised Q analysis extends traditional Q methodology by constructing a
 #' large set of synthetic combined statements from smaller groups of simple
-#' ranked or scored statements. This can reduce the burden placed on
-#' respondents, permit analyses with more respondents than simple statements,
-#' and provide quantitative support for naming and interpreting extracted
-#' components.
+#' ranked or scored statements. These combinations are represented by dummy
+#' variables: binary indicators in which `1` means that a simple statement is
+#' included in a synthetic statement and `0` means that it is excluded. This
+#' can reduce the burden placed on respondents, permit analyses with more
+#' respondents than simple statements, and provide quantitative support for
+#' naming and interpreting extracted components.
 #'
 #' @section Mathematical orientation:
 #' Let `V` be a respondent-by-statement matrix and `D` a binary design matrix
@@ -40,14 +42,17 @@
 #' @section Complete workflow:
 #' The programmatic workflow is divided into explicit stages:
 #'
-#' 1. [gqr_read()] reads CSV, RDS, RDA, or RData files.
+#' 1. [gqr_read()] reads CSV, RDS, RDA, or RData files; [gqr_example_roles()]
+#'    returns the same recommended roles used by the Shiny app for bundled examples.
 #' 2. [gqr_filter_data()], [gqr_transform_data()], and [gqr_prepare_data()]
 #'    select respondents, transform analysis variables, and assign column roles.
 #' 3. [gqr_estimate_design()] estimates design size before allocation.
 #' 4. [gqr_generate_dummies()] creates full, grouped one-per-group, or random
 #'    synthetic-statement designs.
 #' 5. [gqr_make_w()] calculates the synthetic evaluation matrix.
-#' 6. [gqr_pca()] performs PCA with optional Varimax rotation.
+#' 6. [gqr_pca()] performs PCA with optional Varimax rotation;
+#'    [gqr_pca_design()] provides an exact compact alternative for large ordinary
+#'    PCA analyses without materialising the full W matrix.
 #' 7. [gqr_regress_statements()] and [gqr_regress_respondents()] assist
 #'    component interpretation.
 #'
@@ -66,11 +71,14 @@
 #' statement's synthetic evaluation is represented by the sum of its
 #' constituent evaluations. Full binary designs grow as `2^m`; researchers
 #' should use [gqr_estimate_design()] and prefer grouped or random designs when
-#' exhaustive enumeration is not feasible. PCA and regression results remain
-#' exploratory and require substantive interpretation.
+#' exhaustive enumeration is not feasible. For large ordinary PCA analyses,
+#' [gqr_pca_design()] exploits the low-rank identity `W = D V^T` to avoid the
+#' full W matrix. PCA and regression results remain exploratory and require
+#' substantive interpretation.
 #'
 #' @section Bundled data:
-#' `dummy_data` is a small synthetic example. `gardening` contains selected
+#' `dummy_data` is a small synthetic example with nine statement variables and
+#' two respondent covariates. `gardening` contains selected
 #' columns from the multilingual Central and Eastern European gardening
 #' questionnaire dataset published by Varga-Szilay et al. (2026). The bundled
 #' extract is provided for demonstrating GQR and does not replace the full

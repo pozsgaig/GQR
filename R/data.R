@@ -1,10 +1,11 @@
 #' Small synthetic Generalised Q example
 #'
 #' A compact dataset supplied for examples and automated tests. It contains ten
-#' respondents and nine numeric simple-statement variables. The values are
+#' respondents, nine numeric simple-statement variables, one synthetic numeric
+#' covariate, and one synthetic two-level factor covariate. All values are
 #' synthetic and have no substantive interpretation.
 #'
-#' @format A data frame with 10 rows and 10 columns:
+#' @format A data frame with 10 rows and 12 columns:
 #' \describe{
 #'   \item{Respondent}{Unique respondent identifier (`R1`--`R10`).}
 #'   \item{Q1}{Numeric score for simple statement 1.}
@@ -16,6 +17,10 @@
 #'   \item{Q7}{Numeric score for simple statement 7.}
 #'   \item{Q8}{Numeric score for simple statement 8.}
 #'   \item{Q9}{Numeric score for simple statement 9.}
+#'   \item{Numeric_covariate}{Synthetic numeric respondent-level covariate
+#'   used to demonstrate component--covariate regression.}
+#'   \item{Factor_covariate}{Synthetic factor covariate with two levels, `A`
+#'   and `B`, used to demonstrate categorical component--covariate regression.}
 #' }
 #' @usage data(dummy_data)
 #' @examples
@@ -25,8 +30,8 @@
 #'   dummy_data,
 #'   analysis_cols = paste0("Q", 1:9),
 #'   id_col = "Respondent",
-#'   n_components = 3,
-#'   respondent_regression = FALSE
+#'   covariate_cols = c("Numeric_covariate", "Factor_covariate"),
+#'   n_components = 3
 #' )
 #' @keywords datasets
 "dummy_data"

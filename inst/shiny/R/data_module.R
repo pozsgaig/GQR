@@ -239,14 +239,29 @@ dataTabServer <- function(id, built_in_data = NULL) {
     })
 
     output$example_dataset_note <- shiny::renderUI({
-      if (!isTRUE(input$use_example) || !identical(input$example_dataset, "Gardening")) {
+      if (!isTRUE(input$use_example)) {
         return(NULL)
       }
 
-      shiny::div(
-        class = "help-block",
-        "This example is a selected-column extract from the gardening dataset published in Scientific Data (2026) and analysed in Urban Forestry & Urban Greening (2024, 2025). Full references are provided on the Home tab and in ?gardening."
-      )
+      if (identical(input$example_dataset, "Dummy data")) {
+        return(
+          shiny::div(
+            class = "help-block",
+            "This synthetic example contains nine Q statement variables plus Numeric_covariate and Factor_covariate (levels A/B). The two covariates are selected automatically on the Data tab."
+          )
+        )
+      }
+
+      if (identical(input$example_dataset, "Gardening")) {
+        return(
+          shiny::div(
+            class = "help-block",
+            "This example is a selected-column extract from the gardening dataset published in Scientific Data (2026) and analysed in Urban Forestry & Urban Greening (2024, 2025). Full references are provided on the Home tab and in ?gardening."
+          )
+        )
+      }
+
+      NULL
     })
 
     # ---- labels ----
@@ -307,20 +322,41 @@ dataTabServer <- function(id, built_in_data = NULL) {
       cols <- names(df)
       numeric_cols <- cols[vapply(df, is.numeric, logical(1))]
 
+      default_analysis <- numeric_cols
+      default_covariates <- setdiff(cols, numeric_cols)
+
+      # Keep the built-in examples synchronised with the package-level role
+      # definitions used by non-GUI analyses. Uploaded datasets retain the
+      # generic numeric/non-numeric defaults.
+      if (isTRUE(input$use_example) && !is.null(input$example_dataset)) {
+        dataset_key <- switch(
+          input$example_dataset,
+          "Dummy data" = "dummy_data",
+          "Gardening" = "gardening",
+          NULL
+        )
+
+        if (!is.null(dataset_key)) {
+          roles <- GQR::gqr_example_roles(dataset_key)
+          default_analysis <- intersect(roles$analysis_cols, cols)
+          default_covariates <- intersect(roles$covariate_cols, cols)
+        }
+      }
+
       shiny::tagList(
         shiny::h4("Assign roles"),
         shiny::selectInput(
           ns("analysis_cols"),
           "Columns for analysis",
           choices  = cols,
-          selected = numeric_cols,
+          selected = default_analysis,
           multiple = TRUE
         ),
         shiny::selectInput(
           ns("covariate_cols"),
           "Covariate columns",
           choices  = cols,
-          selected = setdiff(cols, numeric_cols),
+          selected = default_covariates,
           multiple = TRUE
         )
       )
@@ -598,7 +634,7 @@ dataTabServer <- function(id, built_in_data = NULL) {
     })
 
     # ---- freeze snapshot on Next ----
-    shiny::observeEvent(input$next_to_dummies, {
+    freeze_snapshot_and_move <- function() {
       df_trans <- data_current()
       vars <- safe_analysis_cols()
       covs <- safe_covariate_cols()
@@ -624,6 +660,83 @@ dataTabServer <- function(id, built_in_data = NULL) {
         inputId = "main_tabs",
         selected = "Dummies"
       )
+    }
+
+    shiny::observeEvent(input$next_to_dummies, {
+      df_trans <- data_current()
+      vars <- safe_analysis_cols()
+      groups_cur <- current_valid_groups()
+      shiny::req(df_trans, vars)
+
+      # Estimation is deliberately performed before D or W is allocated.
+      design <- if (is.null(groups_cur)) {
+        GQR::gqr_estimate_design(
+          variables = vars,
+          mode = "all",
+          n_respondents = nrow(df_trans)
+        )
+      } else {
+        GQR::gqr_estimate_design(
+          variables = vars,
+          mode = "group_one_per",
+          groups = groups_cur,
+          n_respondents = nrow(df_trans),
+          allow_ungrouped = TRUE
+        )
+      }
+
+      warn_ungrouped <- is.null(groups_cur) && (
+        is.finite(design$patterns) && design$patterns >= 4096 ||
+          is.finite(design$w_memory_mb) && design$w_memory_mb >= 128
+      )
+
+      if (isTRUE(warn_ungrouped)) {
+        shiny::showModal(
+          shiny::modalDialog(
+            title = "Proceed without variable groups?",
+            easyClose = FALSE,
+            footer = shiny::tagList(
+              shiny::modalButton("Stay on Data tab"),
+              shiny::actionButton(
+                ns("confirm_ungrouped"),
+                "Proceed without groups",
+                class = "btn-warning"
+              )
+            ),
+            shiny::p(
+              "No variable groups are currently defined. GQR will therefore use the full binary dummy design."
+            ),
+            shiny::tags$ul(
+              shiny::tags$li(
+                sprintf(
+                  "%s analysis variables produce %s synthetic combinations.",
+                  length(vars),
+                  format(design$patterns, big.mark = ",", scientific = FALSE)
+                )
+              ),
+              shiny::tags$li(
+                sprintf(
+                  "A fully materialised W matrix would require about %.1f MiB before temporary copies and PCA objects.",
+                  design$w_memory_mb
+                )
+              )
+            ),
+            shiny::p(
+              "This may be substantially slower than a grouped design. GQR uses a compact PCA algorithm where possible, but generating and displaying very large designs can still take time and memory."
+            ),
+            shiny::p(
+              "You can cancel the subsequent dummy or PCA calculation from its progress panel without terminating R."
+            )
+          )
+        )
+      } else {
+        freeze_snapshot_and_move()
+      }
+    }, ignoreInit = TRUE)
+
+    shiny::observeEvent(input$confirm_ungrouped, {
+      shiny::removeModal()
+      freeze_snapshot_and_move()
     }, ignoreInit = TRUE)
 
     list(

@@ -3,7 +3,7 @@
 required_packages <- c(
   "shiny",
   "tidyr",
-  "broom",
+  "callr",
   "dplyr",
   "DT",
   "purrr",
@@ -12,6 +12,7 @@ required_packages <- c(
   "ggplot2",
   "ggnewscale",
   "Polychrome",
+  "psych",
   "RColorBrewer",
   "scales"
 )

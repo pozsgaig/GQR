@@ -4,11 +4,25 @@ outputTabUI <- function(id) {
   ns <- NS(id)
 
   tabPanel(
-    "Output",
+    "Component–Covariate Regression",
     div(
       class = "q-container",
-      h2("Component–covariate relationships"),
-      p("Regression and visualisation of respondent loadings on selected covariates."),
+      h2("Component–Covariate Regression"),
+      p("Relate respondent PCA loadings to demographic, geographic, behavioural, or other selected covariates."),
+
+      gqr_info_box(
+        "What is analysed on this tab?",
+        p(
+          "This tab works at the respondent level. For each selected PCA component, the respondent loading is used as the dependent variable and the covariates selected on the Data tab are used as predictors."
+        ),
+        p(
+          "The regression coefficients indicate how respondent characteristics are associated with higher or lower loadings on a component. The respondent-loading map and covariate plots provide complementary visualisations of the same component structure."
+        ),
+        p(
+          "These regressions support interpretation of the components; they should not be interpreted as causal effects. Filtering respondents here affects only these covariate analyses and visualisations, not the PCA solution already calculated."
+        ),
+        open = TRUE
+      ),
 
       h4("Respondent filters"),
       div(
@@ -71,7 +85,7 @@ outputTabUI <- function(id) {
 
       br(),
 
-      h4("Respondent loading map"),
+      h4("Respondent component-loading map"),
       uiOutput(ns("pc_scatter_controls")),
       plotOutput(ns("pc_scatter_plot"), height = "500px"),
 
@@ -164,7 +178,7 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
       covs <- output_covariate_cols()
       req(df)
 
-      validate(need("ID" %in% colnames(df), "An ID column is required for the Output tab."))
+      validate(need("ID" %in% colnames(df), "An ID column is required for the Component–Covariate Regression tab."))
 
       covs <- setdiff(covs %||% character(0), "ID")
       keep_cols <- intersect(c("ID", covs), colnames(df))
@@ -369,49 +383,52 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
       )
     })
 
-    reg_models <- eventReactive(input$run_models, {
+    respondent_regression <- eventReactive(input$run_models, {
       dat <- respondent_loadings_filtered()
       comps <- input$components
       covs <- input$covariates
-      req(dat, comps, covs)
+      req(dat, comps, covs, pca_state$result())
       req(length(comps) > 0, length(covs) > 0)
 
-      valid_covs <- covs[vapply(covs, function(v) {
-        x <- dat[[v]]
-
-        if (is.numeric(x)) {
-          length(unique(x[is.finite(x)])) >= 2
-        } else {
-          length(unique(as.character(x[!is.na(x)]))) >= 2
-        }
-      }, logical(1))]
-
+      # Delegate the fitted models and coefficient table to the same exported
+      # package function used by the non-graphical interface. The displayed
+      # respondent filters are honoured by subsetting the PCA loadings first.
+      pca_for_regression <- pca_state$result()
+      pc_cols <- intersect(colnames(pca_for_regression$loadings), colnames(dat))
       validate(
-        need(length(valid_covs) > 0,
-             "No selected covariates have enough variation after filtering to fit a regression model.")
+        need(length(pc_cols) > 0L, "No component loadings are available for regression.")
       )
 
-      fits <- lapply(comps, function(pc) {
-        form <- stats::as.formula(
-          paste(pc, "~", paste(valid_covs, collapse = " + "))
-        )
-        stats::lm(form, data = dat)
-      })
+      pca_for_regression$loadings <- as.matrix(dat[, pc_cols, drop = FALSE])
+      rownames(pca_for_regression$loadings) <- as.character(dat$ID)
 
-      stats::setNames(fits, comps)
+      metadata <- dat[, unique(c("ID", covs)), drop = FALSE]
+
+      tryCatch(
+        GQR::gqr_regress_respondents(
+          pca = pca_for_regression,
+          metadata = metadata,
+          id_col = "ID",
+          covariates = covs,
+          components = comps
+        ),
+        error = function(e) {
+          validate(need(FALSE, conditionMessage(e)))
+        }
+      )
     })
 
+    reg_models <- reactive({
+      result <- respondent_regression()
+      req(result)
+      result$models
+    })
 
     reg_results <- reactive({
-      fits <- reg_models()
-      req(fits)
-
-      purrr::imap_dfr(fits, function(fit, pc) {
-        suppressWarnings(broom::tidy(fit)) |>
-          dplyr::mutate(component = pc)
-      })
+      result <- respondent_regression()
+      req(result)
+      result$coefficients
     })
-
 
     output$reg_summary_component_ui <- renderUI({
       if (length(all_covariate_names()) == 0L) {

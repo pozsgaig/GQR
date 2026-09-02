@@ -2,7 +2,7 @@ PCAregressionsTabUI <- function(id) {
   ns <- NS(id)
 
   tabPanel(
-    "PCA Regressions",
+    "Statement–Component Regression",
 
     tags$head(
       tags$style(HTML("
@@ -32,8 +32,23 @@ PCAregressionsTabUI <- function(id) {
 
     div(
       class = "q-container",
-      h2("Component-Covariate Regressions"),
-      p("Linear regressions of PCA component scores on the dummy variables used to generate W."),
+      h2("Statement–Component Regression"),
+      p("Use the original statement dummies to identify which statements characterise each PCA component."),
+
+      gqr_info_box(
+        "How should these regressions be interpreted?",
+        p(
+          "For each retained PCA component, GQR regresses the component scores of the synthetic statement combinations on the dummy variables in D. The coefficients therefore show how strongly inclusion of each original statement is associated with higher or lower scores on that component."
+        ),
+        p(
+          "In grouped one-per-group designs, one statement per group must be omitted from the fitted model as a reference category because the dummies within each group sum to one. These reference statements are retained in the heatmap and displayed as 0, as are dummy variables that are constant or all zero."
+        ),
+        p(
+          "Standardised coefficients are useful for comparing the relative contribution of statements within and across components. The regression is intended as an aid to component interpretation and naming; it does not imply a causal relationship."
+        ),
+        open = TRUE
+      ),
+
       fluidRow(
         column(
           12,
@@ -70,22 +85,17 @@ PCAregressionsTabServer <- function(id, data_state, pca_state, dummies_state) {
     ns <- session$ns
 
     group_map <- reactive({
-      if (!is.null(data_state$groups)) {
-        data_state$groups()
-      } else {
-        NULL
+      if (!is.null(dummies_state) && !is.null(dummies_state$snapshot)) {
+        s <- dummies_state$snapshot()
+        if (!is.null(s)) return(s$groups)
       }
+      if (!is.null(data_state$groups)) data_state$groups() else NULL
     })
 
     scored_W_data <- reactive({
-      sc1 <- pca_state$scored_W()
-      if (!is.null(sc1)) {
-        return(sc1)
-      }
-
-      sc2 <- pca_state$scores()
-      req(sc2)
-      sc2
+      sc <- pca_state$scores()
+      req(sc)
+      sc
     })
 
     augmented_W <- reactive({
@@ -111,11 +121,38 @@ PCAregressionsTabServer <- function(id, data_state, pca_state, dummies_state) {
       colnames(D)
     })
 
-    predictor_vars <- reactive({
-      get_regression_predictors(
-        dummy_vars = dummy_vars(),
-        groups = group_map()
+    pca_stub <- reactive({
+      sc <- scored_W_data()
+      pcs <- pc_vars()
+      req(sc, pcs)
+
+      mat <- as.matrix(sc[, pcs, drop = FALSE])
+      rownames(mat) <- rownames(sc)
+      list(scores = mat)
+    })
+
+    raw_regression <- reactive({
+      GQR::gqr_regress_statements(
+        pca = pca_stub(),
+        D = dummies_state$D(),
+        groups = group_map(),
+        components = pc_vars(),
+        standardise = FALSE
       )
+    })
+
+    beta_regression <- reactive({
+      GQR::gqr_regress_statements(
+        pca = pca_stub(),
+        D = dummies_state$D(),
+        groups = group_map(),
+        components = pc_vars(),
+        standardise = TRUE
+      )
+    })
+
+    predictor_vars <- reactive({
+      raw_regression()$predictors
     })
 
     pc_vars <- reactive({
@@ -137,38 +174,11 @@ PCAregressionsTabServer <- function(id, data_state, pca_state, dummies_state) {
     })
 
     reg_models <- reactive({
-      dat <- augmented_W()
-      preds <- predictor_vars()
-      pcs <- pc_vars()
-      req(dat, preds, pcs)
-      req(length(preds) > 0)
-
-      stats::setNames(
-        lapply(pcs, function(pc) {
-          form <- stats::as.formula(
-            paste(pc, "~", paste(preds, collapse = " + "))
-          )
-          stats::lm(form, data = dat)
-        }),
-        pcs
-      )
+      raw_regression()$models
     })
 
     beta_models <- reactive({
-      dat <- augmented_W()
-      preds <- predictor_vars()
-      pcs <- pc_vars()
-      req(dat, preds, pcs)
-      req(length(preds) > 0)
-
-      lapply(pcs, function(pc) {
-        standardiseandfit(
-          pc_name = pc,
-          data = dat,
-          dummy_vars = preds
-        )
-      }) |>
-        stats::setNames(pcs)
+      beta_regression()$models
     })
 
     output$reg_details <- renderPrint({
@@ -188,56 +198,135 @@ PCAregressionsTabServer <- function(id, data_state, pca_state, dummies_state) {
         )
       }
 
+      omitted <- raw_regression()$baselines
+      constants <- raw_regression()$constants
+      if (length(omitted) > 0L) {
+        cat(
+          "Reference variables shown as 0 in the heatmap:",
+          paste(omitted, collapse = ", "),
+          "\n"
+        )
+      }
+      if (length(constants) > 0L) {
+        cat(
+          "Constant/all-zero variables shown as 0 in the heatmap:",
+          paste(constants, collapse = ", "),
+          "\n"
+        )
+      }
+      if (length(omitted) + length(constants) > 0L) cat("\n")
+
       print(suppressWarnings(summary(model)))
     })
 
-    coeff_matrix <- reactive({
-      preds <- predictor_vars()
-      req(length(preds) > 0)
+    heatmap_layout <- reactive({
+      vars <- dummy_vars()
+      gm <- group_map()
+      req(vars)
 
-      if (identical(input$display_mode, "beta")) {
-        mods <- beta_models()
-        req(mods)
-
-        out <- lapply(names(mods), function(pc) {
-          suppressWarnings(broom::tidy(mods[[pc]])) |>
-            dplyr::filter(.data$term != "(Intercept)") |>
-            dplyr::select(term, estimate) |>
-            dplyr::rename(!!pc := estimate)
-        })
-
-        mat <- Reduce(
-          function(x, y) dplyr::full_join(x, y, by = "term"),
-          out
-        ) |>
-          dplyr::rename(Variable = term) |>
-          dplyr::slice(match(preds, .data$Variable)) |>
-          dplyr::filter(!is.na(.data$Variable))
-
-        return(mat)
+      if (is.null(gm) || nrow(gm) == 0L) {
+        return(
+          data.frame(
+            Variable = vars,
+            Group = NA_character_,
+            stringsAsFactors = FALSE
+          )
+        )
       }
 
-      mods <- reg_models()
-      req(mods)
+      gm <- gm |>
+        dplyr::filter(
+          !is.na(.data$group),
+          !is.na(.data$variable),
+          .data$variable %in% vars
+        ) |>
+        dplyr::distinct(.data$group, .data$variable)
 
-      out <- lapply(names(mods), function(pc) {
-        suppressWarnings(broom::tidy(mods[[pc]])) |>
-          dplyr::filter(.data$term != "(Intercept)") |>
-          dplyr::select(term, estimate) |>
-          dplyr::rename(!!pc := estimate)
-      })
+      if (nrow(gm) == 0L) {
+        return(
+          data.frame(
+            Variable = vars,
+            Group = NA_character_,
+            stringsAsFactors = FALSE
+          )
+        )
+      }
 
-      Reduce(
-        function(x, y) dplyr::full_join(x, y, by = "term"),
-        out
+      group_order <- unique(gm$group)
+      gm <- gm |>
+        dplyr::mutate(
+          .group_order = match(.data$group, group_order),
+          .variable_order = match(.data$variable, vars)
+        ) |>
+        dplyr::arrange(.data$.group_order, .data$.variable_order)
+
+      grouped_vars <- gm$variable
+      ungrouped_vars <- setdiff(vars, grouped_vars)
+
+      data.frame(
+        Variable = c(grouped_vars, ungrouped_vars),
+        Group = c(
+          as.character(gm$group),
+          rep("Ungrouped", length(ungrouped_vars))
+        ),
+        stringsAsFactors = FALSE
+      )
+    })
+
+    coeff_matrix <- reactive({
+      result <- if (identical(input$display_mode, "beta")) {
+        beta_regression()
+      } else {
+        raw_regression()
+      }
+
+      vars <- dummy_vars()
+      pcs <- pc_vars()
+      req(result, vars, pcs)
+
+      long <- result$coefficients |>
+        dplyr::filter(.data$term != "(Intercept)") |>
+        dplyr::select(
+          Component = .data$component,
+          Variable = .data$term,
+          Estimate = .data$estimate
+        )
+
+      wide <- tidyr::pivot_wider(
+        long,
+        names_from = "Component",
+        values_from = "Estimate"
+      )
+
+      out <- data.frame(
+        Variable = vars,
+        stringsAsFactors = FALSE
       ) |>
-        dplyr::rename(Variable = term) |>
-        dplyr::slice(match(preds, .data$Variable)) |>
-        dplyr::filter(!is.na(.data$Variable))
+        dplyr::left_join(wide, by = "Variable")
+
+      for (pc in pcs) {
+        if (!pc %in% names(out)) out[[pc]] <- NA_real_
+      }
+
+      zero_reference <- union(result$baselines, result$constants)
+      if (length(zero_reference) > 0L) {
+        for (pc in pcs) {
+          out[[pc]][out$Variable %in% zero_reference] <- 0
+        }
+      }
+
+      layout <- heatmap_layout()
+      out |>
+        dplyr::slice(match(layout$Variable, .data$Variable)) |>
+        dplyr::select(Variable, dplyr::all_of(pcs))
     })
 
     coeff_heatmap_plot <- reactive({
-      preds <- predictor_vars()
+      layout <- heatmap_layout()
+      pcs <- pc_vars()
+      req(layout, pcs)
+
+      component_index <- stats::setNames(seq_along(pcs), pcs)
 
       df_plot <- coeff_matrix() |>
         tidyr::pivot_longer(
@@ -246,27 +335,74 @@ PCAregressionsTabServer <- function(id, data_state, pca_state, dummies_state) {
           values_to = "Estimate"
         ) |>
         dplyr::mutate(
-          Component = factor(.data$Component, levels = pc_vars()),
-          Variable = factor(.data$Variable, levels = rev(preds))
+          Component = factor(.data$Component, levels = pcs),
+          ComponentIndex = unname(component_index[as.character(.data$Component)]),
+          Variable = factor(
+            .data$Variable,
+            levels = rev(layout$Variable)
+          ),
+          Label = ifelse(
+            is.na(.data$Estimate),
+            "",
+            sprintf("%.2f", .data$Estimate)
+          )
         )
 
-      ggplot2::ggplot(
+      # The y-axis factor is reversed so the first grouped variable is shown at
+      # the top. Group boundaries are calculated in that displayed order.
+      y_variables <- rev(layout$Variable)
+      y_groups <- layout$Group[match(y_variables, layout$Variable)]
+      transitions <- if (length(y_groups) > 1L) {
+        which(y_groups[-1L] != y_groups[-length(y_groups)]) + 0.5
+      } else {
+        numeric(0)
+      }
+
+      label_df <- NULL
+      if (any(!is.na(layout$Group))) {
+        label_df <- layout |>
+          dplyr::filter(!is.na(.data$Group)) |>
+          dplyr::group_by(.data$Group) |>
+          dplyr::summarise(
+            Variable = .data$Variable[ceiling(dplyr::n() / 2)],
+            .groups = "drop"
+          ) |>
+          dplyr::mutate(
+            Variable = factor(
+              .data$Variable,
+              levels = rev(layout$Variable)
+            ),
+            # Reserve a separate blank strip to the right of the last PC.
+            X = length(pcs) + 0.75
+          )
+      }
+
+      x_max <- length(pcs) + if (!is.null(label_df) && nrow(label_df) > 0L) 2.2 else 0.5
+
+      p <- ggplot2::ggplot(
         df_plot,
-        ggplot2::aes(x = Component, y = Variable, fill = Estimate)
+        ggplot2::aes(x = .data$ComponentIndex, y = .data$Variable, fill = .data$Estimate)
       ) +
-        ggplot2::geom_tile(colour = "white") +
+        ggplot2::geom_tile(width = 1, height = 1, colour = "white") +
         ggplot2::geom_text(
-          ggplot2::aes(label = sprintf("%.2f", Estimate)),
+          ggplot2::aes(label = .data$Label),
           size = 5.5,
           fontface = "bold"
         ) +
         ggplot2::scale_fill_distiller(
           palette = "Spectral",
-          direction = -1
+          direction = -1,
+          na.value = "grey90"
+        ) +
+        ggplot2::scale_x_continuous(
+          breaks = seq_along(pcs),
+          labels = pcs,
+          limits = c(0.5, x_max),
+          expand = c(0, 0)
         ) +
         ggplot2::labs(
           x = "PCA Component",
-          y = "Generated Variable",
+          y = "Original statement",
           fill = if (identical(input$display_mode, "beta")) {
             "Std. beta"
           } else {
@@ -302,6 +438,7 @@ PCAregressionsTabServer <- function(id, data_state, pca_state, dummies_state) {
             size = 19,
             face = "bold"
           ),
+          legend.position = "bottom",
           legend.title = ggplot2::element_text(
             size = 14,
             face = "bold"
@@ -309,8 +446,40 @@ PCAregressionsTabServer <- function(id, data_state, pca_state, dummies_state) {
           legend.text = ggplot2::element_text(
             size = 12,
             face = "bold"
-          )
+          ),
+          plot.margin = ggplot2::margin(5.5, 15, 5.5, 5.5)
         )
+
+      if (length(transitions) > 0L) {
+        p <- p + ggplot2::geom_hline(
+          yintercept = transitions,
+          linewidth = 0.7,
+          colour = "grey30"
+        )
+      }
+
+      if (!is.null(label_df) && nrow(label_df) > 0L) {
+        p <- p + ggplot2::geom_vline(
+          xintercept = length(pcs) + 0.5,
+          linewidth = 0.6,
+          colour = "grey55"
+        )
+
+        p <- p + ggplot2::geom_text(
+          data = label_df,
+          ggplot2::aes(
+            x = .data$X,
+            y = .data$Variable,
+            label = .data$Group
+          ),
+          inherit.aes = FALSE,
+          hjust = 0,
+          fontface = "bold",
+          size = 4.5
+        )
+      }
+
+      p
     })
 
     output$coeff_heatmap <- renderPlot({

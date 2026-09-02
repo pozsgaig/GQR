@@ -13,7 +13,9 @@ gqr_generate_dummies(
   seed = NULL,
   include_empty = TRUE,
   allow_ungrouped = FALSE,
-  max_patterns = 1000000L
+  max_patterns = 1000000L,
+  progress = NULL,
+  cancel = NULL
 )
 }
 \arguments{
@@ -37,6 +39,13 @@ inactive.}
 
 \item{max_patterns}{Maximum permitted number of rows, checked before
 allocation.}
+
+\item{progress}{Optional callback function receiving two arguments,
+\code{value} (from 0 to 1) and \code{message}. It can be used by scripts or
+interfaces to report progress.}
+
+\item{cancel}{Optional zero-argument callback. If it returns \code{TRUE}, the
+computation stops with a \code{gqr_cancelled} error at the next safe checkpoint.}
 }
 \value{
 An integer zero/one matrix with named columns and synthetic statement

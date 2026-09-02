@@ -53,6 +53,34 @@ gqr_css <- function() {
         border-left: 4px solid #375a7f;
         background: #f2f5f8;
       }
+      details.gqr-info-box {
+        margin: 12px 0 18px 0;
+        border: 1px solid #b8cee3;
+        border-radius: 6px;
+        background: #eef6fc;
+      }
+      details.gqr-info-box > summary {
+        padding: 11px 14px;
+        cursor: pointer;
+        font-weight: 700;
+        font-size: 1.08em;
+        color: #ffffff;
+        background: #375a7f;
+        border-radius: 5px;
+        list-style-position: inside;
+      }
+      details.gqr-info-box[open] > summary {
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+      }
+      .gqr-info-box-body {
+        padding: 12px 16px 8px 16px;
+        color: #263746;
+      }
+      .gqr-info-box-body p:last-child,
+      .gqr-info-box-body ul:last-child {
+        margin-bottom: 6px;
+      }
       @media (max-width: 768px) {
         .q-container {
           margin-left: 0;
@@ -61,5 +89,15 @@ gqr_css <- function() {
         }
       }
     "))
+  )
+}
+
+# Reusable collapsible information panel used on analytical tabs.
+gqr_info_box <- function(title, ..., open = TRUE) {
+  shiny::tags$details(
+    class = "gqr-info-box",
+    open = if (isTRUE(open)) "open" else NULL,
+    shiny::tags$summary(title),
+    shiny::div(class = "gqr-info-box-body", ...)
   )
 }

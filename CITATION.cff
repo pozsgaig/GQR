@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use GQR, please cite the software and the Generalised Q methodology paper."
 title: "GQR: Generalised Q Analysis in R"
 type: software
-version: 0.1.0
+version: 0.1.1
 repository-code: "https://github.com/pozsgaig/GQR"
 url: "https://github.com/pozsgaig/GQR"
 license: GPL-3.0-or-later

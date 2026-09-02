@@ -9,7 +9,12 @@ gqr_make_w(
   analysis_cols = NULL,
   D,
   id_col = NULL,
-  na_action = c("error", "mean", "zero")
+  na_action = c("error", "mean", "zero"),
+  rows = NULL,
+  algorithm = c("auto", "matmul", "chunked"),
+  chunk_size = 5000L,
+  progress = NULL,
+  cancel = NULL
 )
 }
 \arguments{
@@ -24,6 +29,22 @@ gqr_make_w(
 
 \item{na_action}{Handling of non-finite analysis values: \code{"error"},
 \code{"mean"}, or \code{"zero"}.}
+
+\item{rows}{Optional row indices or synthetic-statement names identifying a
+subset of \code{D} to evaluate. This is useful for previews without materialising
+the complete W matrix.}
+
+\item{algorithm}{Matrix construction strategy. \code{"matmul"} uses one BLAS
+matrix multiplication; \code{"chunked"} processes blocks of rows so progress
+and cancellation can be checked; \code{"auto"} chooses chunking when a progress
+or cancellation callback is supplied.}
+
+\item{chunk_size}{Number of D rows processed per block in chunked mode.}
+
+\item{progress}{Optional callback receiving \code{value} (0--1) and \code{message}.}
+
+\item{cancel}{Optional zero-argument callback. Returning \code{TRUE} cancels at
+the next block boundary.}
 }
 \value{
 A numeric matrix with synthetic combined statements in rows and

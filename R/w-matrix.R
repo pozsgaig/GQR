@@ -13,6 +13,17 @@
 #' @param id_col Optional respondent identifier column when `data` is plain.
 #' @param na_action Handling of non-finite analysis values: `"error"`,
 #'   `"mean"`, or `"zero"`.
+#' @param rows Optional row indices or synthetic-statement names identifying a
+#'   subset of `D` to evaluate. This is useful for previews without materialising
+#'   the complete W matrix.
+#' @param algorithm Matrix construction strategy. `"matmul"` uses one BLAS
+#'   matrix multiplication; `"chunked"` processes blocks of rows so progress
+#'   and cancellation can be checked; `"auto"` chooses chunking when a progress
+#'   or cancellation callback is supplied.
+#' @param chunk_size Number of D rows processed per block in chunked mode.
+#' @param progress Optional callback receiving `value` (0--1) and `message`.
+#' @param cancel Optional zero-argument callback. Returning `TRUE` cancels at
+#'   the next block boundary.
 #'
 #' @return A numeric matrix with synthetic combined statements in rows and
 #'   respondents in columns.
@@ -49,68 +60,89 @@ gqr_make_w <- function(
     analysis_cols = NULL,
     D,
     id_col = NULL,
-    na_action = c("error", "mean", "zero")) {
+    na_action = c("error", "mean", "zero"),
+    rows = NULL,
+    algorithm = c("auto", "matmul", "chunked"),
+    chunk_size = 5000L,
+    progress = NULL,
+    cancel = NULL) {
 
   na_action <- match.arg(na_action)
+  algorithm <- match.arg(algorithm)
+  chunk_size <- as.integer(chunk_size)
 
-  if (inherits(data, "gqr_prepared_data")) {
-    analysis_cols <- data$analysis_cols
-    ids <- data$ids
-    data <- data$data
+  if (length(chunk_size) != 1L || is.na(chunk_size) || chunk_size < 1L) {
+    stop("`chunk_size` must be a positive integer.", call. = FALSE)
+  }
+
+  prepared <- .gqr_prepare_analysis_matrix(
+    data = data,
+    analysis_cols = analysis_cols,
+    id_col = id_col,
+    na_action = na_action
+  )
+
+  D <- .gqr_validate_design_matrix(D, prepared$analysis_cols)
+
+  if (!is.null(rows)) {
+    if (is.character(rows)) {
+      if (is.null(rownames(D))) {
+        stop("Character `rows` require row names on `D`.", call. = FALSE)
+      }
+      row_index <- match(rows, rownames(D))
+      if (anyNA(row_index)) {
+        stop("Some requested `rows` are not present in `D`.", call. = FALSE)
+      }
+    } else {
+      row_index <- as.integer(rows)
+      if (anyNA(row_index) || any(row_index < 1L | row_index > nrow(D))) {
+        stop("Numeric `rows` are outside the valid D row range.", call. = FALSE)
+      }
+    }
+    D <- D[row_index, , drop = FALSE]
+  }
+
+  .gqr_check_cancel(cancel)
+  .gqr_report_progress(progress, 0, "Constructing W")
+
+  if (algorithm == "auto") {
+    algorithm <- if (!is.null(progress) || !is.null(cancel)) "chunked" else "matmul"
+  }
+
+  Vt <- t(prepared$V)
+
+  if (algorithm == "matmul" || nrow(D) <= chunk_size) {
+    W <- D %*% Vt
+    .gqr_report_progress(progress, 0.95, "Matrix multiplication complete")
   } else {
-    data <- .gqr_check_data(data)
-    analysis_cols <- .gqr_check_columns(data, analysis_cols, "analysis_cols")
-    ids <- .gqr_make_ids(data, id_col)
-  }
-
-  .gqr_check_numeric(data, analysis_cols)
-
-  if (!is.matrix(D) || !is.numeric(D)) {
-    stop("`D` must be a numeric matrix.", call. = FALSE)
-  }
-  if (is.null(colnames(D))) {
-    stop("`D` must have variable names as column names.", call. = FALSE)
-  }
-  if (anyDuplicated(colnames(D))) {
-    stop("`D` column names must be unique.", call. = FALSE)
-  }
-  if (any(!is.finite(D)) || any(!D %in% c(0, 1))) {
-    stop("`D` must contain only finite zero/one values.", call. = FALSE)
-  }
-
-  missing_in_d <- setdiff(analysis_cols, colnames(D))
-  extra_in_d <- setdiff(colnames(D), analysis_cols)
-  if (length(missing_in_d) > 0L || length(extra_in_d) > 0L) {
-    stop(
-      "`D` columns must match `analysis_cols` exactly.",
-      call. = FALSE
+    W <- matrix(
+      NA_real_,
+      nrow = nrow(D),
+      ncol = nrow(prepared$V)
     )
-  }
 
-  D <- D[, analysis_cols, drop = FALSE]
-  V <- as.matrix(data[analysis_cols])
-  storage.mode(V) <- "double"
-
-  if (any(!is.finite(V))) {
-    if (na_action == "error") {
-      stop(
-        "Analysis data contain missing or non-finite values. Transform or impute them first, or change `na_action`.",
-        call. = FALSE
+    starts <- seq.int(1L, nrow(D), by = chunk_size)
+    for (i in seq_along(starts)) {
+      .gqr_check_cancel(cancel)
+      from <- starts[i]
+      to <- min(nrow(D), from + chunk_size - 1L)
+      W[from:to, ] <- D[from:to, , drop = FALSE] %*% Vt
+      .gqr_report_progress(
+        progress,
+        i / length(starts),
+        sprintf("Constructing W block %d of %d", i, length(starts))
       )
     }
-    if (na_action == "mean") {
-      V <- .gqr_impute_columns(V)
-    } else {
-      V[!is.finite(V)] <- 0
-    }
   }
 
-  W <- D %*% t(V)
   if (is.null(rownames(D))) {
     rownames(W) <- paste0("S", seq_len(nrow(D)))
   } else {
     rownames(W) <- rownames(D)
   }
-  colnames(W) <- ids
+  colnames(W) <- prepared$ids
+
+  .gqr_check_cancel(cancel)
+  .gqr_report_progress(progress, 1, "W matrix ready")
   W
 }

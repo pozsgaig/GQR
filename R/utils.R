@@ -295,3 +295,96 @@
     check.names = FALSE
   )
 }
+
+.gqr_report_progress <- function(progress, value, message = NULL) {
+  if (!is.null(progress)) {
+    if (!is.function(progress)) {
+      stop("`progress` must be NULL or a function.", call. = FALSE)
+    }
+    value <- max(0, min(1, as.numeric(value)[1L]))
+    progress(value, message)
+  }
+  invisible(NULL)
+}
+
+.gqr_check_cancel <- function(cancel) {
+  if (!is.null(cancel)) {
+    if (!is.function(cancel)) {
+      stop("`cancel` must be NULL or a function.", call. = FALSE)
+    }
+    if (isTRUE(cancel())) {
+      condition <- simpleError("GQR computation cancelled.")
+      class(condition) <- c("gqr_cancelled", class(condition))
+      stop(condition)
+    }
+  }
+  invisible(NULL)
+}
+
+.gqr_prepare_analysis_matrix <- function(
+    data,
+    analysis_cols = NULL,
+    id_col = NULL,
+    na_action = c("error", "mean", "zero")) {
+
+  na_action <- match.arg(na_action)
+
+  if (inherits(data, "gqr_prepared_data")) {
+    analysis_cols <- data$analysis_cols
+    ids <- data$ids
+    data <- data$data
+  } else {
+    data <- .gqr_check_data(data)
+    analysis_cols <- .gqr_check_columns(data, analysis_cols, "analysis_cols")
+    ids <- .gqr_make_ids(data, id_col)
+  }
+
+  .gqr_check_numeric(data, analysis_cols)
+
+  V <- as.matrix(data[analysis_cols])
+  storage.mode(V) <- "double"
+
+  if (any(!is.finite(V))) {
+    if (na_action == "error") {
+      stop(
+        "Analysis data contain missing or non-finite values. Transform or impute them first, or change `na_action`.",
+        call. = FALSE
+      )
+    }
+    if (na_action == "mean") {
+      V <- .gqr_impute_columns(V)
+    } else {
+      V[!is.finite(V)] <- 0
+    }
+  }
+
+  list(
+    data = data,
+    V = V,
+    analysis_cols = analysis_cols,
+    ids = ids
+  )
+}
+
+.gqr_validate_design_matrix <- function(D, analysis_cols) {
+  if (!is.matrix(D) || !is.numeric(D)) {
+    stop("`D` must be a numeric matrix.", call. = FALSE)
+  }
+  if (is.null(colnames(D))) {
+    stop("`D` must have variable names as column names.", call. = FALSE)
+  }
+  if (anyDuplicated(colnames(D))) {
+    stop("`D` column names must be unique.", call. = FALSE)
+  }
+  if (any(!is.finite(D)) || any(!D %in% c(0, 1))) {
+    stop("`D` must contain only finite zero/one values.", call. = FALSE)
+  }
+
+  missing_in_d <- setdiff(analysis_cols, colnames(D))
+  extra_in_d <- setdiff(colnames(D), analysis_cols)
+  if (length(missing_in_d) > 0L || length(extra_in_d) > 0L) {
+    stop("`D` columns must match `analysis_cols` exactly.", call. = FALSE)
+  }
+
+  D[, analysis_cols, drop = FALSE]
+}

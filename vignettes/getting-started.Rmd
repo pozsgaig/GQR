@@ -25,7 +25,9 @@ The accessor returns a data frame directly:
 
 ```{r}
 dat <- gqr_example_data("dummy_data")
+roles <- gqr_example_roles("dummy_data")
 str(dat)
+roles
 ```
 
 The same object can be loaded through the conventional package-data interface:
@@ -39,16 +41,17 @@ data("dummy_data", package = "GQR")
 ```{r}
 fit <- gqr_analysis(
   data = dat,
-  analysis_cols = paste0("Q", 1:9),
-  id_col = "Respondent",
+  analysis_cols = roles$analysis_cols,
+  id_col = roles$id_col,
+  covariate_cols = roles$covariate_cols,
   dummy_mode = "all",
   n_components = 3,
-  rotation = "varimax",
-  respondent_regression = FALSE
+  rotation = "varimax"
 )
 
 fit
 summary(fit)$variance
+head(fit$respondent_regression$coefficients)
 ```
 
 The full binary design has 512 rows because nine simple statements create

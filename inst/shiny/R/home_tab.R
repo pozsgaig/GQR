@@ -9,7 +9,6 @@ homeTabUI <- function(id) {
     shiny::div(
       class = "q-container q-home",
       shiny::h2("GQR: Generalised Q Analysis in R"),
-      shiny::h6("Gábor Pozsgai & Tomaz Ponce Dentinho"),
       shiny::p(
         class = "lead",
         "GQR provides a complete Generalised Q workflow through this interactive Shiny application and through ordinary R functions."
@@ -95,7 +94,7 @@ homeTabUI <- function(id) {
         class = "q-home-start",
         shiny::p(
           shiny::strong("Start on the Data tab."),
-          " The Gardening and Dummy data examples are loaded from bundled RDA files."
+          " The Gardening and Dummy data examples are loaded from bundled RDA files. The Dummy data example includes one numeric and one two-level factor covariate for demonstrating Component–Covariate Regression."
         )
       )
     )

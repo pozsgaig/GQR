@@ -12,10 +12,12 @@ ordinary R functions and an optional graphical Shiny interface.
 
 Generalised Q analysis extends traditional Q methodology by constructing a
 large set of synthetic combined statements from smaller groups of simple
-ranked or scored statements. This can reduce the burden placed on
-respondents, permit analyses with more respondents than simple statements,
-and provide quantitative support for naming and interpreting extracted
-components.
+ranked or scored statements. These combinations are represented by dummy
+variables: binary indicators in which \code{1} means that a simple statement is
+included in a synthetic statement and \code{0} means that it is excluded. This
+can reduce the burden placed on respondents, permit analyses with more
+respondents than simple statements, and provide quantitative support for
+naming and interpreting extracted components.
 }
 \section{Mathematical orientation}{
 
@@ -49,14 +51,17 @@ started with \code{\link[=run_gqr]{run_gqr()}}.
 
 The programmatic workflow is divided into explicit stages:
 \enumerate{
-\item \code{\link[=gqr_read]{gqr_read()}} reads CSV, RDS, RDA, or RData files.
+\item \code{\link[=gqr_read]{gqr_read()}} reads CSV, RDS, RDA, or RData files; \code{\link[=gqr_example_roles]{gqr_example_roles()}}
+returns the same recommended roles used by the Shiny app for bundled examples.
 \item \code{\link[=gqr_filter_data]{gqr_filter_data()}}, \code{\link[=gqr_transform_data]{gqr_transform_data()}}, and \code{\link[=gqr_prepare_data]{gqr_prepare_data()}}
 select respondents, transform analysis variables, and assign column roles.
 \item \code{\link[=gqr_estimate_design]{gqr_estimate_design()}} estimates design size before allocation.
 \item \code{\link[=gqr_generate_dummies]{gqr_generate_dummies()}} creates full, grouped one-per-group, or random
 synthetic-statement designs.
 \item \code{\link[=gqr_make_w]{gqr_make_w()}} calculates the synthetic evaluation matrix.
-\item \code{\link[=gqr_pca]{gqr_pca()}} performs PCA with optional Varimax rotation.
+\item \code{\link[=gqr_pca]{gqr_pca()}} performs PCA with optional Varimax rotation;
+\code{\link[=gqr_pca_design]{gqr_pca_design()}} provides an exact compact alternative for large ordinary
+PCA analyses without materialising the full W matrix.
 \item \code{\link[=gqr_regress_statements]{gqr_regress_statements()}} and \code{\link[=gqr_regress_respondents]{gqr_regress_respondents()}} assist
 component interpretation.
 }
@@ -80,13 +85,16 @@ The construction of \code{W} assumes additive separability: a combined
 statement's synthetic evaluation is represented by the sum of its
 constituent evaluations. Full binary designs grow as \code{2^m}; researchers
 should use \code{\link[=gqr_estimate_design]{gqr_estimate_design()}} and prefer grouped or random designs when
-exhaustive enumeration is not feasible. PCA and regression results remain
-exploratory and require substantive interpretation.
+exhaustive enumeration is not feasible. For large ordinary PCA analyses,
+\code{\link[=gqr_pca_design]{gqr_pca_design()}} exploits the low-rank identity \verb{W = D V^T} to avoid the
+full W matrix. PCA and regression results remain exploratory and require
+substantive interpretation.
 }
 
 \section{Bundled data}{
 
-\code{dummy_data} is a small synthetic example. \code{gardening} contains selected
+\code{dummy_data} is a small synthetic example with nine statement variables and
+two respondent covariates. \code{gardening} contains selected
 columns from the multilingual Central and Eastern European gardening
 questionnaire dataset published by Varga-Szilay et al. (2026). The bundled
 extract is provided for demonstrating GQR and does not replace the full

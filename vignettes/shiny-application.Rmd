@@ -36,9 +36,11 @@ The application implements the method introduced by Dentinho, Kourtit and
 Nijkamp (2023). The same workflow is also available through the ordinary R
 functions documented in the other GQR vignettes.
 
-```{r shiny-home, echo=FALSE, out.width="100%"}
-knitr::include_graphics("figures/shiny-home.png")
-```
+<!-- SCREENSHOT PLACEHOLDER: Application landing page
+Include a screenshot of the complete Home tab here.
+Suggested filename: vignettes/figures/shiny-home.png
+Suggested width: 100% of the vignette page.
+-->
 
 ## Starting the application
 
@@ -59,13 +61,13 @@ your R and Shiny settings. It contains six tabs:
    synthetic evaluation matrix `W`;
 4. **PCA**: principal component analysis, rotation, scree plot, and respondent
    loadings;
-5. **PCA Regressions**: regression of combination scores on statement dummies;
-6. **Output**: regression and graphical analysis of respondent loadings against
+5. **Statement–Component Regression**: regression of combination scores on statement dummies;
+6. **Component–Covariate Regression**: regression and graphical analysis of respondent loadings against
    selected covariates.
 
 <!-- OPTIONAL GRAPHICAL ELEMENT: Workflow diagram
 A simple diagram can be inserted here:
-Home -> Data -> Dummies -> PCA -> PCA Regressions -> Output
+Home -> Data -> Dummies -> PCA -> Statement–Component Regression -> Component–Covariate Regression
 Suggested filename: vignettes/figures/shiny-workflow.png
 -->
 
@@ -88,13 +90,12 @@ After reviewing the introduction, continue to the **Data** tab.
 The Data tab contains four collapsible sections. The choices made here are
 frozen when **Next** is clicked. If you later change the selected variables,
 transformations, or grouping, click **Next** again before continuing so that the
-Dummies, PCA, and Output tabs use the revised settings.
+Dummies, PCA, and Component–Covariate Regression tabs use the revised settings.
 
-
-```{r shiny-home, echo=FALSE, out.width="100%"}
-knitr::include_graphics("figures/shiny-data-overview.png")
-```
-
+<!-- SCREENSHOT PLACEHOLDER: Data tab overview
+Include a screenshot showing the four collapsible Data sections.
+Suggested filename: vignettes/figures/shiny-data-overview.png
+-->
 
 ### 1. Data input
 
@@ -107,7 +108,8 @@ Select **Use built-in dataset**, then choose either:
 - **Gardening**, which contains selected columns from the multilingual Central
   and Eastern European gardening questionnaire dataset published by
   Varga-Szilay et al. (2026); or
-- **Dummy data**, a small synthetic example with nine analysis variables.
+- **Dummy data**, a small synthetic example with nine analysis variables, one
+  numeric covariate, and one two-level factor covariate.
 
 #### External data
 
@@ -149,12 +151,17 @@ Assign variables to two roles:
 - **Columns for analysis** are the simple ranked or scored statements used to
   construct `D` and `W`. These columns must be numeric.
 - **Covariate columns** contain respondent metadata used for filtering and for
-  the respondent-level regressions in the Output tab.
+  the respondent-level regressions in the Component–Covariate Regression tab.
 
-The application initially selects numeric columns for analysis and non-numeric
-columns as covariates. Review these automatic selections carefully, because
-numeric identifiers or numeric metadata should not normally be treated as
-statements.
+For uploaded data, the application initially uses numeric columns as analysis
+variables and non-numeric columns as covariates. For the bundled examples, the
+default roles come from `gqr_example_roles()` so the graphical and scripted
+interfaces start from the same definitions. In particular, **Dummy data** uses
+`Q1`--`Q9` as analysis variables and automatically selects
+`Numeric_covariate` and `Factor_covariate` as covariates. The Gardening example
+uses its numeric questionnaire fields as analysis variables and its
+non-numeric respondent descriptors (other than `ID`) as covariates. These are
+only starting defaults and can be changed before clicking **Next**.
 
 One transformation can be applied to all selected analysis columns:
 
@@ -220,12 +227,19 @@ Suggested filename: vignettes/figures/shiny-groups.png
 -->
 
 When all settings are complete, click **Next**. This stores a snapshot of the
-current data and opens the Dummies tab.
+current data and opens the Dummies tab. If no groups are defined and the full
+binary design is expected to be large, GQR first shows the number of synthetic
+combinations and the approximate memory required by a fully materialised W
+matrix. You can return to the grouping controls or explicitly continue without
+groups.
 
 ## Dummies tab
 
-The Dummies tab constructs the binary design matrix `D` and the synthetic
-evaluation matrix `W`.
+The Dummies tab constructs the binary design matrix `D` and previews the
+synthetic evaluation matrix `W`. Large dummy designs are generated in a
+separate R process. A progress panel shows that the calculation is active, and
+**Stop calculation** can terminate that process without terminating the main R
+session.
 
 Each column of `D` represents one analysis statement, and each row represents a
 synthetic combination. For example, the pattern `(1, 0, 1)` includes the first
@@ -280,9 +294,10 @@ Suggested filename: vignettes/figures/shiny-d-matrix.png
 ### W matrix preview
 
 The W heatmap displays synthetic evaluations for combinations and respondents.
-Use the slider to restrict the number of displayed combinations. Numeric values
-can be added to the cells, although this is usually practical only for small
-matrices.
+Use the slider to restrict the number of displayed combinations. For
+responsiveness, the app calculates only the rows needed by this preview rather
+than materialising the complete W matrix. Numeric values can be added to cells
+for small previews.
 
 <!-- SCREENSHOT PLACEHOLDER: W matrix
 Include a screenshot of the W heatmap, preferably without numeric labels for a
@@ -290,15 +305,29 @@ large example and with labels for a small example.
 Suggested filename: vignettes/figures/shiny-w-matrix.png
 -->
 
-Click **Proceed to calculations** after checking both matrices. If more than
-1,000 dummy combinations are present, the application displays a warning before
-continuing. Large designs can require substantial memory and computation time.
+Click **Proceed to calculations** after checking the design. Very large designs
+produce an additional warning before continuing. The subsequent PCA runs in a
+separate process and can also be stopped without terminating R.
 
 ## PCA tab
 
-The PCA tab applies principal component analysis to `W`. Synthetic combinations
-are the observations, while respondents are the variables represented by the
-PCA loadings.
+The PCA tab applies principal component analysis to the Generalised Q design.
+Synthetic combinations are the observations, while respondents are the
+variables represented by the PCA loadings.
+
+For ordinary PCA, the app normally uses GQR's compact exact algorithm rather
+than performing an SVD of the complete W matrix. Since `W = D V^T`, the rank of
+W cannot exceed the number of original statements. The decomposition can
+therefore be performed in the much smaller statement space and the retained
+scores reconstructed afterwards. This is algebraically equivalent to ordinary
+PCA on W, apart from floating-point error and arbitrary component signs.
+
+The SPSS-style correlation option still uses a fully materialised W matrix. It
+uses the same `psych::cor.smooth()` + `psych::principal()` workflow as the
+original GQR application, including its Varimax component ordering and
+regression-type scores. This preserves compatibility with earlier SPSS-oriented
+results, but it has greater memory and computational requirements than the
+compact ordinary-PCA engine.
 
 <!-- SCREENSHOT PLACEHOLDER: PCA tab overview
 Include a screenshot containing the scree plot and PCA controls.
@@ -315,6 +344,9 @@ and the aims of the study rather than on a single automatic rule.
 The scree plot can be downloaded as PNG or PDF.
 
 ### Rotation and PCA settings
+
+Click **Run / update PCA** after changing the PCA settings. The progress panel
+reports the current stage and provides **Stop calculation** at any time.
 
 Available settings include:
 
@@ -339,7 +371,7 @@ Include a screenshot of the rotated loadings table or the scored W viewer.
 Suggested filename: vignettes/figures/shiny-pca-loadings.png
 -->
 
-## PCA Regressions tab
+## Statement–Component Regression tab
 
 This tab supports statement-content interpretation. For each retained component,
 its combination scores are regressed on the dummy variables that generated `W`.
@@ -348,7 +380,14 @@ negatively associated with the component.
 
 For a grouped one-per-group design, one variable from each group is omitted as a
 baseline because all dummy variables within a group sum to one. Coefficients are
-therefore interpreted relative to the omitted statement in the same group.
+therefore interpreted relative to the omitted statement in the same group. The
+heatmap retains these reference variables and displays their reference value as
+zero. Variables that are constant or all zero because they were not activated
+by the grouping are also retained and displayed as zero.
+
+When groups are available, heatmap rows follow the group order rather than
+alphabetical order. Horizontal lines separate groups, and group names are shown
+to the right of the heatmap.
 
 Choose between:
 
@@ -372,14 +411,14 @@ Include a screenshot of the standardised coefficient heatmap.
 Suggested filename: vignettes/figures/shiny-statement-regressions.png
 -->
 
-## Output tab
+## Component–Covariate Regression tab
 
-The Output tab relates respondent loadings to respondent-level covariates. It is
-conceptually distinct from the PCA Regressions tab: the latter explains
-combination scores using statements, whereas the Output tab explains respondent
+The Component–Covariate Regression tab relates respondent loadings to respondent-level covariates. It is
+conceptually distinct from the Statement–Component Regression tab: the latter explains
+combination scores using statements, whereas the Component–Covariate Regression tab explains respondent
 loadings using metadata.
 
-<!-- SCREENSHOT PLACEHOLDER: Output tab overview
+<!-- SCREENSHOT PLACEHOLDER: Component–Covariate Regression tab overview
 Include a screenshot showing component and covariate selectors together with
 one respondent-loading plot.
 Suggested filename: vignettes/figures/shiny-output-overview.png
@@ -476,9 +515,9 @@ is selected from each group.
 
 ### Interpretation
 
-1. In PCA Regressions, compare standardised coefficients across components.
+1. In Statement–Component Regression, compare standardised coefficients across components.
 2. Identify statements with the strongest positive and negative coefficients.
-3. In Output, select respondent covariates and run the respondent regressions.
+3. In Component–Covariate Regression, select respondent covariates and run the respondent regressions.
 4. Compare the coefficient pattern with the respondent loading map and
    covariate plots.
 5. Name components only after considering all of these outputs together with
@@ -503,7 +542,7 @@ Check whether groups were defined and whether every intended statement was
 assigned. Without a valid grouping, the app uses the full binary design, whose
 size grows as `2^m` for `m` statements.
 
-### There are no covariate controls in the Output tab
+### There are no covariate controls in the Component–Covariate Regression tab
 
 Return to the Data tab, select one or more covariate columns, and click **Next**
 again.

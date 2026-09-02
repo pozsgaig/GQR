@@ -32,7 +32,13 @@ gqr_analysis(
   pca_impute = c("none", "mean"),
   statement_regression = TRUE,
   respondent_regression = !is.null(id_col) && length(covariate_cols) > 0L,
-  standardise_statement_regression = TRUE
+  standardise_statement_regression = TRUE,
+  pca_engine = c("auto", "matrix", "design"),
+  materialise_w = c("auto", "always", "never"),
+  compact_threshold_mb = 64,
+  w_memory_limit_mb = 64,
+  progress = NULL,
+  cancel = NULL
 )
 
 \method{print}{gqr_analysis}(x, ...)
@@ -102,6 +108,25 @@ covariates.}
 \item{standardise_statement_regression}{Whether statement regressions use
 standardised responses and predictors.}
 
+\item{pca_engine}{PCA computation engine. \code{"matrix"} first materialises W;
+\code{"design"} uses \code{\link[=gqr_pca_design]{gqr_pca_design()}} and avoids the full W matrix;
+\code{"auto"} selects the compact design engine for ordinary PCA when W is
+estimated to exceed \code{compact_threshold_mb}.}
+
+\item{materialise_w}{Whether the returned object should contain the complete
+W matrix. \code{"auto"} omits W when the compact PCA engine is used and the
+estimated W size exceeds \code{w_memory_limit_mb}.}
+
+\item{compact_threshold_mb}{Estimated W size above which \code{"auto"} uses the
+compact design PCA engine.}
+
+\item{w_memory_limit_mb}{Estimated W size above which \code{"auto"} avoids
+materialising W when compact PCA is available.}
+
+\item{progress}{Optional callback receiving \code{value} (0--1) and \code{message}.}
+
+\item{cancel}{Optional zero-argument cancellation callback.}
+
 \item{x}{A \code{gqr_analysis} object.}
 
 \item{...}{Additional arguments, currently unused.}
@@ -110,8 +135,10 @@ standardised responses and predictors.}
 }
 \value{
 An object of class \code{gqr_analysis} with the prepared data, design-size
-estimate, dummy matrix \code{D}, synthetic evaluation matrix \code{W}, PCA result,
-and optional statement and respondent regression results.
+estimate, dummy matrix \code{D}, PCA result, optional statement and respondent
+regression results, and (when materialised) the synthetic evaluation
+matrix \code{W}. For large analyses using the compact engine, \code{W} can be \code{NULL}
+by design because it is not needed for PCA.
 
 \code{x}, invisibly.
 
@@ -132,18 +159,26 @@ regression baseline.
 Full designs grow exponentially. \code{gqr_analysis()} calls
 \code{\link[=gqr_estimate_design]{gqr_estimate_design()}} before allocation, but users should still choose a
 defensible \code{max_patterns} and consider grouped or random designs.
+
+For ordinary PCA, the compact engine uses the identity \verb{W = D V^T} and the
+fact that the rank of W cannot exceed the number of original statements.
+It therefore avoids a singular-value decomposition of the complete W matrix
+and can also avoid storing W altogether. This is exact for the ordinary
+\code{prcomp} workflow; correlation/SPSS-style scoring still uses the full W
+matrix.
 }
 \examples{
 dat <- gqr_example_data("dummy_data")
+roles <- gqr_example_roles("dummy_data")
 
 fit <- gqr_analysis(
   data = dat,
-  analysis_cols = paste0("Q", 1:9),
-  id_col = "Respondent",
+  analysis_cols = roles$analysis_cols,
+  id_col = roles$id_col,
+  covariate_cols = roles$covariate_cols,
   dummy_mode = "all",
   n_components = 3,
-  rotation = "varimax",
-  respondent_regression = FALSE
+  rotation = "varimax"
 )
 
 fit
@@ -175,6 +210,6 @@ as a new tool in social science research: A pedagogical introduction.
 }
 \seealso{
 \link{gqr_methodology}, \code{\link[=gqr_prepare_data]{gqr_prepare_data()}},
-\code{\link[=gqr_generate_dummies]{gqr_generate_dummies()}}, \code{\link[=gqr_make_w]{gqr_make_w()}}, \code{\link[=gqr_pca]{gqr_pca()}},
+\code{\link[=gqr_generate_dummies]{gqr_generate_dummies()}}, \code{\link[=gqr_make_w]{gqr_make_w()}}, \code{\link[=gqr_pca]{gqr_pca()}}, \code{\link[=gqr_pca_design]{gqr_pca_design()}},
 \code{\link[=gqr_regress_statements]{gqr_regress_statements()}}, \code{\link[=gqr_regress_respondents]{gqr_regress_respondents()}}
 }

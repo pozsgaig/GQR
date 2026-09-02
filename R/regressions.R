@@ -101,7 +101,7 @@
 #' statements characterise synthetic combinations with high or low component
 #' scores.
 #'
-#' @param pca A result from [gqr_pca()].
+#' @param pca A result from [gqr_pca()] or [gqr_pca_design()].
 #' @param D The design matrix used to construct the corresponding W matrix.
 #' @param groups Optional grouped-design specification.
 #' @param components Optional component names; all retained components are used
@@ -222,7 +222,7 @@ gqr_regress_statements <- function(
 #' Fits one model per selected component to relate respondent loadings to
 #' demographic, geographic, behavioural, or other respondent-level variables.
 #'
-#' @param pca A result from [gqr_pca()].
+#' @param pca A result from [gqr_pca()] or [gqr_pca_design()].
 #' @param metadata Respondent-level data containing identifiers and covariates.
 #' @param id_col Name of the column matching respondent IDs in the PCA loadings.
 #' @param covariates Character vector naming predictor columns.
@@ -256,17 +256,11 @@ gqr_regress_statements <- function(
 #'   respondent_regression = FALSE
 #' )
 #'
-#' metadata <- transform(
-#'   dat,
-#'   Segment = rep(c("A", "B"), length.out = nrow(dat)),
-#'   Sequence = seq_len(nrow(dat))
-#' )
-#'
 #' respondent_models <- gqr_regress_respondents(
 #'   pca = fit$pca,
-#'   metadata = metadata,
+#'   metadata = dat,
 #'   id_col = "Respondent",
-#'   covariates = c("Segment", "Sequence")
+#'   covariates = c("Numeric_covariate", "Factor_covariate")
 #' )
 #' head(respondent_models$coefficients)
 #'

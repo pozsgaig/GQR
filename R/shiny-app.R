@@ -43,7 +43,7 @@
 #' @export
 run_gqr <- function(...) {
   required <- c(
-    "shiny", "tidyr", "broom", "dplyr", "DT", "purrr", "tibble",
+    "shiny", "tidyr", "callr", "dplyr", "DT", "purrr", "tibble",
     "readr", "ggplot2", "ggnewscale", "Polychrome", "RColorBrewer",
     "scales"
   )

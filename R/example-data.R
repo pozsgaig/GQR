@@ -48,7 +48,7 @@
 #'
 #' @param dataset Either `"dummy_data"` or `"gardening"`.
 #'
-#' @return A data frame. `dummy_data` has 10 rows and 10 columns;
+#' @return A data frame. `dummy_data` has 10 rows and 12 columns;
 #'   `gardening` has 5,524 rows and 25 columns.
 #'
 #' @details
@@ -73,6 +73,7 @@
 #' @examples
 #' dummy <- gqr_example_data("dummy_data")
 #' names(dummy)
+#' gqr_example_roles("dummy_data")
 #'
 #' garden <- gqr_example_data("gardening")
 #' garden[1:3, 1:5]
@@ -93,7 +94,10 @@ gqr_example_data <- function(dataset = c("dummy_data", "gardening")) {
 
   expected <- switch(
     dataset,
-    dummy_data = c("Respondent", paste0("Q", 1:9)),
+    dummy_data = c(
+      "Respondent", paste0("Q", 1:9),
+      "Numeric_covariate", "Factor_covariate"
+    ),
     gardening = c("ID", "Country_code", "NUTS")
   )
 
@@ -107,4 +111,63 @@ gqr_example_data <- function(dataset = c("dummy_data", "gardening")) {
   }
 
   out
+}
+
+
+#' Recommended column roles for bundled GQR examples
+#'
+#' @description
+#' Returns the column roles used by the GQR Shiny application for a bundled
+#' example dataset. Using this helper in scripts keeps the graphical and
+#' programmatic interfaces aligned.
+#'
+#' @param dataset Either `"dummy_data"` or `"gardening"`.
+#'
+#' @return A list with `analysis_cols`, `covariate_cols`, and `id_col`.
+#'
+#' @details
+#' For `dummy_data`, the nine `Q` columns are analysis variables and
+#' `Numeric_covariate` plus `Factor_covariate` are the recommended covariates.
+#' For `gardening`, numeric questionnaire variables are used as analysis
+#' variables, while the non-numeric respondent descriptors other than `ID` are
+#' returned as covariates. These are starting defaults only; users can override
+#' them in either interface.
+#'
+#' @examples
+#' roles <- gqr_example_roles("dummy_data")
+#' roles$analysis_cols
+#' roles$covariate_cols
+#'
+#' dat <- gqr_example_data("dummy_data")
+#' fit <- gqr_analysis(
+#'   dat,
+#'   analysis_cols = roles$analysis_cols,
+#'   id_col = roles$id_col,
+#'   covariate_cols = roles$covariate_cols,
+#'   n_components = 3
+#' )
+#'
+#' @export
+gqr_example_roles <- function(dataset = c("dummy_data", "gardening")) {
+  dataset <- match.arg(dataset)
+  dat <- gqr_example_data(dataset)
+
+  if (identical(dataset, "dummy_data")) {
+    return(list(
+      analysis_cols = paste0("Q", 1:9),
+      covariate_cols = c("Numeric_covariate", "Factor_covariate"),
+      id_col = "Respondent"
+    ))
+  }
+
+  id_col <- "ID"
+  analysis_cols <- names(dat)[vapply(dat, is.numeric, logical(1))]
+  analysis_cols <- setdiff(analysis_cols, id_col)
+  covariate_cols <- setdiff(names(dat), c(id_col, analysis_cols))
+
+  list(
+    analysis_cols = analysis_cols,
+    covariate_cols = covariate_cols,
+    id_col = id_col
+  )
 }

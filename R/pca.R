@@ -13,8 +13,10 @@
 #'   for `method = "correlation"`.
 #' @param rotation One of `"none"` or `"varimax"`.
 #' @param center,scale Logical centring and scaling settings for ordinary PCA.
-#' @param method One of `"prcomp"` or `"correlation"`. The latter uses a
-#'   smoothed respondent correlation matrix and regression-type scores.
+#' @param method One of `"prcomp"` or `"correlation"`. The latter reproduces
+#'   the SPSS-style workflow of the original GQR application using a smoothed
+#'   respondent correlation matrix, [psych::principal()], and regression-type
+#'   scores.
 #' @param impute One of `"none"` or `"mean"` for non-finite W values.
 #' @param remove_constant Whether zero-variance respondent columns are removed.
 #' @param tolerance Numerical tolerance used for ranks and matrix inversion.
@@ -31,8 +33,12 @@
 #' would answer a different analytical question.
 #'
 #' Varimax is orthogonal. It changes the component orientation but not the
-#' retained subspace. Component retention and scaling should be justified from
-#' the research design rather than selected solely from defaults.
+#' retained subspace. For `method = "correlation"`, GQR deliberately uses the
+#' same `psych::principal()` implementation as the original Shiny workflow so
+#' that rotated component ordering, signs, and downstream statement-regression
+#' coefficients remain compatible with earlier GQR/SPSS-style analyses.
+#' Component retention and scaling should be justified from the research design
+#' rather than selected solely from defaults.
 #'
 #' @references
 #' Dentinho, T. P., Kourtit, K., & Nijkamp, P. (2023). Generalized Q analysis
@@ -162,44 +168,91 @@ gqr_pca <- function(
       )
     }
 
-    R_raw <- stats::cor(W_used)
-    R <- .gqr_smooth_correlation(R_raw, tolerance = tolerance)
-    eig <- eigen(R, symmetric = TRUE)
-    eigenvalues_all <- pmax(eig$values, 0)
+    # Reproduce the SPSS-style workflow used by the original GQR/Shiny
+    # implementation.  In particular, psych::principal() applies the same
+    # component ordering/sign convention and Varimax implementation that the
+    # earlier app used.  Replacing this with eigen() + stats::varimax() produces
+    # an equivalent subspace, but can materially change the displayed rotated
+    # component order and therefore the downstream statement regressions.
+    R_raw <- stats::cor(W_used, use = "complete.obs")
+    R <- psych::cor.smooth(R_raw)
 
-    available <- sum(eigenvalues_all > tolerance)
+    eig_values <- eigen(R, symmetric = TRUE, only.values = TRUE)$values
+    available <- sum(eig_values > tolerance)
     if (available < 1L) {
       stop("Correlation PCA found no component with positive variance.", call. = FALSE)
     }
 
     if (is.null(n_components)) {
-      n_components <- max(1L, sum(eigenvalues_all > 1))
+      n_components <- max(1L, sum(eig_values > 1))
     }
-    n_components <- max(
-      1L,
-      min(as.integer(n_components), available)
+    n_components <- max(1L, min(as.integer(n_components), available))
+
+    fit_unrotated <- suppressWarnings(
+      psych::principal(
+        r = R,
+        nfactors = n_components,
+        rotate = "none",
+        scores = FALSE,
+        missing = FALSE
+      )
     )
 
-    eigenvalues <- eigenvalues_all[seq_len(n_components)]
-    explained <- 100 * eigenvalues / sum(eigenvalues_all)
-
-    loadings_unrotated <- eig$vectors[, seq_len(n_components), drop = FALSE] %*%
-      diag(sqrt(eigenvalues), nrow = n_components)
-
-    if (rotation == "varimax" && n_components > 1L) {
-      rotated <- stats::varimax(loadings_unrotated)
-      rotation_matrix <- rotated$rotmat
-      loadings <- unclass(rotated$loadings)
+    fit_selected <- if (rotation == "varimax" && n_components > 1L) {
+      suppressWarnings(
+        psych::principal(
+          r = R,
+          nfactors = n_components,
+          rotate = "varimax",
+          scores = FALSE,
+          missing = FALSE
+        )
+      )
     } else {
-      rotation_matrix <- diag(n_components)
-      loadings <- loadings_unrotated
+      fit_unrotated
     }
 
+    # Keep the scree/eigenvalue information unrotated, matching the original
+    # app, while using the selected (possibly rotated) loadings for scores and
+    # interpretation.
+    eigenvalues <- as.numeric(
+      fit_unrotated$Vaccounted["SS loadings", seq_len(n_components)]
+    )
+    explained <- 100 * as.numeric(
+      fit_unrotated$Vaccounted["Proportion Var", seq_len(n_components)]
+    )
+
+    loadings_unrotated <- as.matrix(
+      fit_unrotated$loadings[, seq_len(n_components), drop = FALSE]
+    )
+    loadings <- as.matrix(
+      fit_selected$loadings[, seq_len(n_components), drop = FALSE]
+    )
+
     Z <- base::scale(W_used, center = TRUE, scale = TRUE)
-    weights <- .gqr_inverse_symmetric(R, tolerance = tolerance) %*% loadings
-    scores <- Z %*% weights
-    scores_unrotated <- Z %*%
-      (.gqr_inverse_symmetric(R, tolerance = tolerance) %*% loadings_unrotated)
+    inv_R <- tryCatch(
+      solve(R),
+      error = function(e) .gqr_inverse_symmetric(R, tolerance = tolerance)
+    )
+
+    scores_unrotated <- Z %*% (inv_R %*% loadings_unrotated)
+    scores <- Z %*% (inv_R %*% loadings)
+
+    # psych::principal() may reorder and reorient components after Varimax.
+    # The score columns therefore deliberately follow the returned loading
+    # order instead of applying a second rotation matrix here.
+    rotation_matrix <- if (rotation == "varimax" && n_components > 1L) {
+      if (!is.null(fit_selected$rot.mat)) {
+        as.matrix(fit_selected$rot.mat)
+      } else {
+        tryCatch(
+          qr.solve(loadings_unrotated, loadings),
+          error = function(e) diag(n_components)
+        )
+      }
+    } else {
+      diag(n_components)
+    }
   }
 
   component_names <- paste0("PC", seq_len(n_components))

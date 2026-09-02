@@ -10,7 +10,7 @@ gqr_example_data(dataset = c("dummy_data", "gardening"))
 \item{dataset}{Either \code{"dummy_data"} or \code{"gardening"}.}
 }
 \value{
-A data frame. \code{dummy_data} has 10 rows and 10 columns;
+A data frame. \code{dummy_data} has 10 rows and 12 columns;
 \code{gardening} has 5,524 rows and 25 columns.
 }
 \description{
@@ -33,6 +33,7 @@ description and detailed provenance.
 \examples{
 dummy <- gqr_example_data("dummy_data")
 names(dummy)
+gqr_example_roles("dummy_data")
 
 garden <- gqr_example_data("gardening")
 garden[1:3, 1:5]

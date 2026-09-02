@@ -120,6 +120,11 @@ gqr_estimate_design <- function(
 #'   inactive.
 #' @param max_patterns Maximum permitted number of rows, checked before
 #'   allocation.
+#' @param progress Optional callback function receiving two arguments,
+#'   `value` (from 0 to 1) and `message`. It can be used by scripts or
+#'   interfaces to report progress.
+#' @param cancel Optional zero-argument callback. If it returns `TRUE`, the
+#'   computation stops with a `gqr_cancelled` error at the next safe checkpoint.
 #'
 #' @return An integer zero/one matrix with named columns and synthetic statement
 #'   row names `S1`, `S2`, and so forth.
@@ -169,7 +174,9 @@ gqr_generate_dummies <- function(
     seed = NULL,
     include_empty = TRUE,
     allow_ungrouped = FALSE,
-    max_patterns = 1000000L) {
+    max_patterns = 1000000L,
+    progress = NULL,
+    cancel = NULL) {
 
   variables <- as.character(variables)
   if (length(variables) < 1L || anyNA(variables) || any(variables == "")) {
@@ -181,6 +188,9 @@ gqr_generate_dummies <- function(
 
   mode <- match.arg(mode)
   max_patterns <- as.double(max_patterns)
+
+  .gqr_check_cancel(cancel)
+  .gqr_report_progress(progress, 0, "Checking dummy design")
 
   if (!is.finite(max_patterns) || max_patterns < 1) {
     stop("`max_patterns` must be a positive finite number.", call. = FALSE)
@@ -201,16 +211,20 @@ gqr_generate_dummies <- function(
     }
 
     row_index <- seq.int(0, pattern_count - 1)
-    D <- vapply(
-      seq_along(variables),
-      function(j) {
-        as.integer((row_index %/% 2^(j - 1L)) %% 2)
-      },
-      integer(pattern_count)
+    D <- matrix(
+      0L,
+      nrow = pattern_count,
+      ncol = length(variables)
     )
 
-    if (length(variables) == 1L) {
-      D <- matrix(D, ncol = 1L)
+    for (j in seq_along(variables)) {
+      .gqr_check_cancel(cancel)
+      D[, j] <- as.integer((row_index %/% 2^(j - 1L)) %% 2)
+      .gqr_report_progress(
+        progress,
+        0.05 + 0.85 * j / length(variables),
+        sprintf("Generating dummy variable %d of %d", j, length(variables))
+      )
     }
   } else if (mode == "group_one_per") {
     grouping <- .gqr_prepare_groups(
@@ -245,8 +259,14 @@ gqr_generate_dummies <- function(
     )
 
     for (g in seq_along(grouping$split)) {
+      .gqr_check_cancel(cancel)
       selected_variables <- grouping$split[[g]][index_grid[[g]]]
       D[cbind(seq_len(nrow(D)), match(selected_variables, variables))] <- 1L
+      .gqr_report_progress(
+        progress,
+        0.10 + 0.80 * g / length(grouping$split),
+        sprintf("Expanding group %d of %d", g, length(grouping$split))
+      )
     }
   } else {
     n_patterns <- as.integer(n_patterns)
@@ -260,6 +280,8 @@ gqr_generate_dummies <- function(
       stop("`prob` must lie between zero and one.", call. = FALSE)
     }
 
+    .gqr_check_cancel(cancel)
+    .gqr_report_progress(progress, 0.25, "Sampling random dummy patterns")
     D <- .gqr_with_seed(
       seed,
       matrix(
@@ -283,6 +305,9 @@ gqr_generate_dummies <- function(
 
   rownames(D) <- paste0("S", seq_len(nrow(D)))
   attr(D, "mode") <- mode
+  attr(D, "groups") <- if (mode == "group_one_per") groups else NULL
+  .gqr_check_cancel(cancel)
+  .gqr_report_progress(progress, 1, "Dummy design ready")
   D
 }
 
