@@ -21,7 +21,7 @@ naming and interpreting extracted components.
 }
 \section{Mathematical orientation}{
 
-Let \code{V} be a respondent-by-statement matrix and \code{D} a binary design matrix
+Let \code{V} be a respondent-by-statement matrix and \code{D} a binary dummy matrix
 whose rows indicate which simple statements belong to each synthetic
 combination. GQR constructs
 
@@ -67,7 +67,9 @@ component interpretation.
 }
 
 \code{\link[=gqr_analysis]{gqr_analysis()}} runs these stages in one call. \code{\link[=run_gqr]{run_gqr()}} starts the Shiny
-application.
+application. The graphical interface includes a Reproducible R script tab;
+\code{\link[=gqr_file_provenance]{gqr_file_provenance()}} and \code{\link[=gqr_reproducible_script]{gqr_reproducible_script()}} provide the underlying
+provenance and script-generation helpers.
 }
 
 \section{Interpretation}{

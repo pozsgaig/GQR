@@ -19,13 +19,13 @@ Launches the complete graphical interface for Generalised Q analysis. The
 application uses the same analytical concepts as the programmatic API and
 includes data preparation, variable roles and labels, transformations,
 grouping, synthetic-statement design, W-matrix graphics, PCA diagnostics,
-regression summaries, covariate plots, and downloads.
+regression summaries, covariate plots, downloads, and generation of an executable reproducibility script with input-file provenance.
 }
 \details{
-Shiny and plotting packages are Suggested dependencies so that the
-programmatic GQR workflow can be installed without the graphical stack. If a
-required graphical dependency is missing, \code{run_gqr()} reports the packages
-that must be installed.
+Packages required by the graphical interface are declared as package imports
+so a normal GQR installation also installs the Shiny runtime dependencies.
+Before launching, \code{run_gqr()} verifies that each required namespace can
+actually be loaded and reports the underlying loading error when it cannot.
 
 The method implemented by the application is based on Dentinho, Kourtit and
 Nijkamp (2023). The bundled gardening example is a selected-column extract

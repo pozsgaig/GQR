@@ -26,7 +26,7 @@ homeTabUI <- function(id) {
           ),
           shiny::p(
             shiny::strong("What are dummies? "),
-            "In GQR, a dummy is a binary indicator in the design matrix D. Each column represents one original simple statement and each row represents one synthetic combined statement. A value of 1 means that the statement is included in that combination; 0 means that it is not included. For example, the pattern (1, 0, 1) combines the first and third statements but excludes the second."
+            "In GQR, a dummy is a binary indicator in the dummy matrix D. Each column represents one original simple statement and each row represents one synthetic combined statement. A value of 1 means that the statement is included in that combination; 0 means that it is not included. For example, the pattern (1, 0, 1) combines the first and third statements but excludes the second."
           ),
           shiny::p(
             "Statement-content and respondent-covariate regressions support component interpretation. The synthetic evaluation is additive, so researchers should consider whether the sum of constituent evaluations is appropriate for their application."
@@ -48,7 +48,7 @@ homeTabUI <- function(id) {
           shiny::div(
             class = "q-home-card",
             shiny::h4("1. Prepare data"),
-            shiny::p("Load a bundled RDA example or upload your data, assign column roles, edit labels, transform variables, and define thematic groups.")
+            shiny::p("Load a bundled RDA example or upload your data, rename columns, mark categorical variables as factors, assign column roles, transform variables, and define thematic groups.")
           )
         ),
         shiny::column(
@@ -63,8 +63,8 @@ homeTabUI <- function(id) {
           4,
           shiny::div(
             class = "q-home-card",
-            shiny::h4("3. Interpret results"),
-            shiny::p("Use design and W heatmaps, scree and loading displays, statement regressions, respondent regressions, and covariate graphics.")
+            shiny::h4("3. Interpret and reproduce"),
+            shiny::p("Use dummy and W heatmaps, scree and loading displays, statement regressions, respondent regressions, and covariate graphics, then export the analysis as executable R code.")
           )
         )
       ),

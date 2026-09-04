@@ -17,6 +17,10 @@ The package supports the complete workflow:
 
 > **Development status:** GQR is currently an early development release. Results should be checked carefully and the package interface may still change.
 
+### What changed in 0.1.2
+
+Version 0.1.2 extends the Shiny workflow in three main areas. The new **Reproducible R script** tab converts the current analysis into concise executable R code, including current respondent filters and the final settings of the main plots. Uploaded data now handle common UTF-8 and Windows encodings more robustly, and imported headings are converted to stable ASCII, R-compatible names. On the Data tab, columns can be renamed and numeric-coded categorical variables can be marked explicitly as **Factor** variables. Component-Covariate plots now distinguish continuous and categorical covariates, use continuous colour scales for numeric variables and revised discrete palettes for groups, and support categorical hull/ellipse grouping consistently. Version 0.1.2 also fixes ID handling in PCA/W displays and numeric labels in the W preview. See [`NEWS.md`](NEWS.md) for the full change log.
+
 ### What changed in 0.1.1
 
 Version 0.1.1 focuses on scalability, numerical compatibility, and consistency between the graphical and programmatic interfaces. Large ordinary-PCA analyses can use the exact compact `gqr_pca_design()` engine without materialising the full `W` matrix; the Shiny app warns before very large ungrouped designs, shows progress, and can stop background calculations. SPSS-style PCA again uses the original `psych::principal()` workflow for compatibility with established results. Grouped statement-regression heatmaps preserve group order, separators, group labels, and explicit zero/reference rows. The bundled dummy example now also contains one numeric and one two-level factor covariate. See [`NEWS.md`](NEWS.md) for the full change log.
@@ -256,12 +260,17 @@ The app provides tabs for:
 
 1. package and methodological overview;
 2. data import, labels, roles, transformations and grouping;
-3. dummy-design generation and construction of `W`;
+3. dummy-matrix generation and construction of `W`;
 4. PCA settings and diagnostics;
 5. Statement–Component Regression for interpreting components from statement content;
-6. Component–Covariate Regression for relating respondent loadings to respondent metadata.
+6. Component–Covariate Regression for relating respondent loadings to respondent metadata;
+7. **Reproducible R script**, which records input-file provenance and converts the current frozen analysis into copyable/downloadable executable R code.
 
-For grouped designs, the statement-regression heatmap follows the group order, draws separators between groups, labels each group at the right, and retains omitted reference or constant/all-zero dummy variables as explicit zero coefficients.
+For uploaded inputs, GQR tries common UTF-8 and Windows/Latin encodings and converts imported headings to unique ASCII, R-compatible names so column references remain stable across platforms. The Data tab also allows direct column renaming and explicit **Factor** marking for numeric-coded categories; analysis and covariate roles are kept mutually exclusive.
+
+The reproducibility tab records the original filename and, optionally, checksum information rather than Shiny's temporary upload path. It writes the final grouping, current respondent filters, factor/rename choices, analytical settings, and the final settings of the main generated plots into the script. Plot code is resolved before export, so unused GUI branches are omitted.
+
+For grouped designs, the statement-regression heatmap follows the group order, draws separators between groups, labels each group at the right, and retains omitted reference or constant/all-zero dummy variables as explicit zero coefficients. In Component-Covariate plots, numeric colour variables use continuous scales while categorical variables use discrete palettes designed to remain distinct for small numbers of groups; black is reserved for larger palettes.
 
 A detailed guide is available in the Shiny application vignette:
 

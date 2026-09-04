@@ -481,6 +481,68 @@ dummiesTabServer <- function(id, data_state, active_tab) {
       do.call(shiny::tagList, controls)
     })
 
+    filter_spec <- shiny::reactive({
+      shiny::req(snapshot_ready())
+
+      df <- data_trans_frozen()
+      cov_df <- data_covariates()
+      shiny::req(df, cov_df)
+
+      filters <- list()
+
+      for (v in colnames(cov_df)) {
+        col <- cov_df[[v]]
+        val <- input[[paste0("filter_", v)]]
+        if (is.null(val)) next
+
+        if (is.character(col) || is.factor(col)) {
+          all_values <- sort(unique(as.character(col[!is.na(col)])))
+          selected <- sort(as.character(val))
+          if (!identical(selected, all_values)) {
+            filters[[v]] <- as.character(val)
+          }
+        } else if (is.numeric(col)) {
+          full_range <- range(col, na.rm = TRUE)
+          if (all(is.finite(full_range)) &&
+              !isTRUE(all.equal(as.numeric(val), as.numeric(full_range)))) {
+            filters[[v]] <- as.numeric(val)
+          }
+        }
+      }
+
+      id_filter_raw <- trimws(input$id_filter %||% "")
+      ids <- NULL
+      if (nzchar(id_filter_raw) && "ID" %in% colnames(df)) {
+        ids <- trimws(unlist(strsplit(id_filter_raw, ",")))
+        ids <- ids[nzchar(ids)]
+      }
+
+      list(
+        filters = if (length(filters) == 0L) NULL else filters,
+        ids = if (length(ids) == 0L) NULL else ids,
+        id_col = if ("ID" %in% colnames(df)) "ID" else NULL
+      )
+    })
+
+    dummy_settings <- shiny::reactive({
+      list(
+        mode = dummy_mode_used(),
+        include_empty = TRUE,
+        allow_ungrouped = identical(dummy_mode_used(), "group_one_per"),
+        max_patterns = 1000000L,
+        patterns = design_estimate()$patterns
+      )
+    })
+
+    plot_settings <- shiny::reactive({
+      shiny::req(snapshot_ready())
+      list(
+        n_rows = as.integer(input$n_rows_plot %||% 100L),
+        variable_order = input$dummy_var_order %||% "data",
+        show_w_values = isTRUE(input$show_W_values)
+      )
+    })
+
     filtered_indices <- shiny::reactive({
       shiny::req(snapshot_ready())
 
@@ -721,11 +783,28 @@ dummiesTabServer <- function(id, data_state, active_tab) {
           axis.ticks.x = ggplot2::element_blank()
         )
 
-      if (isTRUE(input$show_W_values) && ncol(W_sub) <= 100L && nrow(W_sub) <= 200L) {
-        p <- p + ggplot2::geom_text(
-          ggplot2::aes(label = sprintf("%.2f", .data$Value)),
-          size = 4
-        )
+      if (isTRUE(input$show_W_values)) {
+        # Honour the checkbox for every preview size. Text becomes smaller for
+        # larger matrices rather than being silently disabled above a fixed
+        # respondent/combination threshold.
+        text_size <- max(1.2, min(4, 120 / max(ncol(W_sub), nrow(W_sub))))
+        value_range <- range(df_long$Value, na.rm = TRUE)
+        value_mid <- if (all(is.finite(value_range))) mean(value_range) else 0
+        df_long$TextColour <- ifelse(df_long$Value <= value_mid, "white", "black")
+
+        p <- p +
+          ggplot2::geom_text(
+            data = df_long,
+            ggplot2::aes(
+              x = .data$Respondent,
+              y = .data$Combination,
+              label = sprintf("%.2f", .data$Value),
+              colour = .data$TextColour
+            ),
+            size = text_size,
+            show.legend = FALSE
+          ) +
+          ggplot2::scale_colour_identity()
       }
 
       p
@@ -796,6 +875,9 @@ dummiesTabServer <- function(id, data_state, active_tab) {
       can_calc = can_calc,
       dummy_count = dummy_count,
       design_estimate = design_estimate,
+      dummy_settings = dummy_settings,
+      plot_settings = plot_settings,
+      filter_spec = filter_spec,
       filtered_indices = filtered_indices,
       filtered_data = filtered_data,
       snapshot = snapshot

@@ -34,7 +34,8 @@ test_that("the complete Shiny interface is bundled", {
     "dummies_tab.R",
     "pca_tab.R",
     "PCA_regression_tab.R",
-    "output_tab.R"
+    "output_tab.R",
+    "reproducibility_tab.R"
   )
 
   expect_true(all(file.exists(file.path(app, "R", modules))))
@@ -148,4 +149,42 @@ test_that("built-in example roles and respondent regressions delegate to package
   expect_match(output_module, "GQR::gqr_regress_respondents", fixed = TRUE)
   expect_false(grepl("stats::lm\\(", output_module))
   expect_match(pca_module, "result = pca_value", fixed = TRUE)
+})
+
+
+test_that("Shiny exposes a reproducible R script with upload provenance", {
+  app <- shiny_app_path()
+  app_text <- paste(readLines(file.path(app, "app.R"), warn = FALSE), collapse = "\n")
+  data_module <- paste(readLines(file.path(app, "R", "data_module.R"), warn = FALSE), collapse = "\n")
+  reproducibility_module <- paste(readLines(file.path(app, "R", "reproducibility_tab.R"), warn = FALSE), collapse = "\n")
+
+  expect_match(app_text, "reproducibilityTabUI", fixed = TRUE)
+  expect_match(app_text, "reproducibilityTabServer", fixed = TRUE)
+  expect_match(data_module, "GQR::gqr_file_provenance", fixed = TRUE)
+  expect_match(data_module, "upload_history", fixed = TRUE)
+  expect_match(data_module, "data_read_error", fixed = TRUE)
+  expect_match(data_module, "gqr_compatible_names", fixed = TRUE)
+  expect_match(data_module, "column_renames", fixed = TRUE)
+  expect_match(reproducibility_module, "GQR::gqr_reproducible_script", fixed = TRUE)
+  expect_match(reproducibility_module, "Copy code", fixed = TRUE)
+  expect_match(reproducibility_module, "Download .R", fixed = TRUE)
+})
+
+
+test_that("renamed covariates remain available to Component-Covariate Regression", {
+  app <- shiny_app_path()
+  data_module <- paste(
+    readLines(file.path(app, "R", "data_module.R"), warn = FALSE),
+    collapse = "\n"
+  )
+  output_module <- paste(
+    readLines(file.path(app, "R", "output_tab.R"), warn = FALSE),
+    collapse = "\n"
+  )
+
+  expect_match(data_module, 'freezeReactiveValue(input, "covariate_cols")', fixed = TRUE)
+  expect_match(data_module, 'any(!value %in% current_names)', fixed = TRUE)
+  expect_match(data_module, 'role_covariates(mapped_covariates)', fixed = TRUE)
+  expect_match(output_module, 's$column_renames', fixed = TRUE)
+  expect_match(output_module, 'unique(intersect(covs, names(df)))', fixed = TRUE)
 })

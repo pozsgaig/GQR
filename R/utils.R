@@ -1,5 +1,60 @@
 # Internal utilities -------------------------------------------------------
 
+# Convert imported or user-supplied headings to deterministic, ASCII,
+# syntactically valid R names. This is intentionally stricter than make.names()
+# alone because make.names() can preserve non-ASCII letters depending on locale.
+.gqr_make_compatible_names <- function(x, unique = TRUE) {
+  x <- as.character(x)
+  x[is.na(x)] <- ""
+  x <- trimws(enc2utf8(x))
+
+  from_chars <- c(
+    "\u00E1", "\u00E0", "\u00E2", "\u00E3", "\u00E4", "\u00C1", "\u00C0", "\u00C2", "\u00C3", "\u00C4",
+    "\u00E7", "\u00C7",
+    "\u00E9", "\u00E8", "\u00EA", "\u00EB", "\u00C9", "\u00C8", "\u00CA", "\u00CB",
+    "\u00ED", "\u00EC", "\u00EE", "\u00EF", "\u00CD", "\u00CC", "\u00CE", "\u00CF",
+    "\u00F1", "\u00D1",
+    "\u00F3", "\u00F2", "\u00F4", "\u00F5", "\u00F6", "\u00D3", "\u00D2", "\u00D4", "\u00D5", "\u00D6",
+    "\u00FA", "\u00F9", "\u00FB", "\u00FC", "\u00DA", "\u00D9", "\u00DB", "\u00DC",
+    "\u00FD", "\u00FF", "\u00DD"
+  )
+  to_chars <- c(
+    "a", "a", "a", "a", "a", "A", "A", "A", "A", "A",
+    "c", "C",
+    "e", "e", "e", "e", "E", "E", "E", "E",
+    "i", "i", "i", "i", "I", "I", "I", "I",
+    "n", "N",
+    "o", "o", "o", "o", "o", "O", "O", "O", "O", "O",
+    "u", "u", "u", "u", "U", "U", "U", "U",
+    "y", "y", "Y"
+  )
+  for (i in seq_along(from_chars)) {
+    x <- gsub(from_chars[[i]], to_chars[[i]], x, fixed = TRUE)
+  }
+
+  ascii <- suppressWarnings(iconv(x, from = "", to = "ASCII//TRANSLIT", sub = ""))
+  bad <- is.na(ascii)
+  if (any(bad)) {
+    ascii[bad] <- iconv(x[bad], from = "", to = "ASCII", sub = "_")
+  }
+
+  ascii <- gsub("[^A-Za-z0-9._]+", ".", ascii)
+  ascii <- gsub("[.]+", ".", ascii)
+  ascii <- sub("^[.]+", "", ascii)
+  ascii <- sub("[.]+$", "", ascii)
+  ascii[!nzchar(ascii)] <- "X"
+
+  make.names(ascii, unique = unique, allow_ = TRUE)
+}
+
+.gqr_repair_import_names <- function(data) {
+  if (!is.data.frame(data)) {
+    data <- as.data.frame(data, stringsAsFactors = FALSE)
+  }
+  names(data) <- .gqr_make_compatible_names(names(data), unique = TRUE)
+  data
+}
+
 .gqr_check_data <- function(data) {
   if (!is.data.frame(data)) {
     data <- as.data.frame(data, stringsAsFactors = FALSE)

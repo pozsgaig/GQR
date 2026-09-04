@@ -11,19 +11,28 @@ gqr_read(path)
 RData file.}
 }
 \value{
-A data frame with at least one row and one column.
+A data frame with at least one row and one column. Column headings
+are converted to ASCII, R-compatible, unique names on import.
 }
 \description{
-Reads a rectangular respondent-level dataset while preserving the original
-column names. CSV, RDS, RDA, and RData files are supported. This is the file
-input counterpart to \code{\link[=gqr_prepare_data]{gqr_prepare_data()}} and the Shiny Data tab.
+Reads a rectangular respondent-level dataset and converts its headings to
+unique, syntactically valid R column names. CSV, RDS, RDA, and RData files
+are supported. This is the file input counterpart to \code{\link[=gqr_prepare_data]{gqr_prepare_data()}}
+and the Shiny Data tab.
 }
 \details{
-CSV delimiters are detected from comma, semicolon, and tab candidates. RDS
-files must contain one object coercible to a data frame. RDA/RData files must
-contain exactly one data frame, or a data frame whose object name matches the
-file name. Column names are not syntactically altered because they may carry
-meaningful statement labels.
+CSV delimiters are detected from comma, semicolon, and tab candidates. GQR
+first attempts UTF-8 and then Windows-1252/Latin-1 encodings so that common
+spreadsheet exports containing accented European characters can be read.
+
+Imported headings are transliterated to ASCII where possible and converted
+with R-compatible syntax. For example, \verb{Questão principal} becomes
+\code{Questao.principal}. Duplicate headings are made unique. This normalisation
+is performed once at import so all later GQR stages use stable names.
+
+RDS files must contain one object coercible to a data frame. RDA/RData files
+must contain exactly one data frame, or a data frame whose object name
+matches the file name.
 
 Reading data does not assign analytical roles or transform values. Use
 \code{\link[=gqr_prepare_data]{gqr_prepare_data()}} after import.

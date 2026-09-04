@@ -80,9 +80,18 @@ PCAregressionsTabUI <- function(id) {
 }
 
 
-PCAregressionsTabServer <- function(id, data_state, pca_state, dummies_state) {
+PCAregressionsTabServer <- function(id, data_state, pca_state, dummies_state, active_tab = NULL) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
+
+    visited <- reactiveVal(FALSE)
+    if (!is.null(active_tab)) {
+      observeEvent(active_tab(), {
+        if (identical(active_tab(), "Statement–Component Regression")) {
+          visited(TRUE)
+        }
+      }, ignoreInit = FALSE)
+    }
 
     group_map <- reactive({
       if (!is.null(dummies_state) && !is.null(dummies_state$snapshot)) {
@@ -286,7 +295,7 @@ PCAregressionsTabServer <- function(id, data_state, pca_state, dummies_state) {
 
       long <- result$coefficients |>
         dplyr::filter(.data$term != "(Intercept)") |>
-        dplyr::select(
+        dplyr::transmute(
           Component = .data$component,
           Variable = .data$term,
           Estimate = .data$estimate
@@ -555,6 +564,29 @@ PCAregressionsTabServer <- function(id, data_state, pca_state, dummies_state) {
           units = "in"
         )
       }
+    )
+
+    list(
+      visited = visited,
+      settings = reactive({
+        if (!isTRUE(visited())) return(NULL)
+        result <- pca_state$result()
+        if (is.null(result) || is.null(result$scores)) return(NULL)
+        list(
+          enabled = TRUE,
+          components = colnames(result$scores),
+          include_raw = TRUE,
+          include_standardised = TRUE
+        )
+      }),
+      plot_settings = reactive({
+        if (!isTRUE(visited())) return(NULL)
+        result <- pca_state$result()
+        if (is.null(result) || is.null(result$scores)) return(NULL)
+        list(
+          display_mode = input$display_mode %||% "beta"
+        )
+      })
     )
   })
 }

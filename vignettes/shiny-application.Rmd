@@ -52,7 +52,7 @@ run_gqr()
 ```
 
 The application opens in the RStudio Viewer or in a web browser, depending on
-your R and Shiny settings. It contains six tabs:
+your R and Shiny settings. It contains seven tabs:
 
 1. **Home**: a short methodological introduction and information about the
    bundled gardening example;
@@ -63,11 +63,12 @@ your R and Shiny settings. It contains six tabs:
    loadings;
 5. **Statement–Component Regression**: regression of combination scores on statement dummies;
 6. **Component–Covariate Regression**: regression and graphical analysis of respondent loadings against
-   selected covariates.
+   selected covariates;
+7. **Reproducible R script**: an executable record of the current analysis, including uploaded-input provenance and the GQR function calls needed to rerun it outside Shiny.
 
 <!-- OPTIONAL GRAPHICAL ELEMENT: Workflow diagram
 A simple diagram can be inserted here:
-Home -> Data -> Dummies -> PCA -> Statement–Component Regression -> Component–Covariate Regression
+Home -> Data -> Dummies -> PCA -> Statement–Component Regression -> Component–Covariate Regression -> Reproducible R script
 Suggested filename: vignettes/figures/shiny-workflow.png
 -->
 
@@ -565,48 +566,45 @@ a random-design analysis through the non-Shiny API.
 
 ## Reproducing an analysis in R
 
-The Shiny application is intended for interactive exploration. For a fully
-scripted and reproducible analysis, use the package functions after finalising
-the choices in the app. The corresponding grouped gardening analysis would be:
+GQR 0.1.2 adds a **Reproducible R script** tab that converts the current frozen Shiny analysis into executable R code. This is the preferred route from exploratory graphical analysis to a publication or archived script because the generated code calls the same exported `gqr_*()` functions used internally by the application.
 
-```{r reproduce, eval=FALSE}
-data("gardening", package = "GQR")
+The generated script records, where applicable:
 
-analysis_columns <- c(
-  "How_important_making_beautiful",
-  "How_importnat_conservation",
-  "How_important_making_money",
-  "How_important_sel_supply",
-  "Time_spend",
-  "How_often_plant",
-  "How_important_pesticide"
-)
+- the bundled dataset name or original uploaded dataset filename;
+- file size, dimensions and MD5 checksum for the dataset used in the analysis;
+- all other datasets or grouping files uploaded during the session, including files later replaced and not used in the current analysis;
+- selected analysis variables and covariates;
+- transformation settings;
+- the final group-to-variable mapping;
+- dummy-matrix generation settings;
+- respondent filters that were used when PCA was run;
+- the PCA engine, component count, centring, scaling, rotation and SPSS-compatible settings;
+- Statement–Component Regression after that tab has been used; and
+- the most recent successfully fitted Component–Covariate Regression, including its selected components, covariates and respondent filters.
 
-groups <- data.frame(
-  group = c(rep("Motivation", 4), rep("Management", 3)),
-  variable = analysis_columns
-)
+For uploaded files, Shiny itself stores a temporary path that ceases to be useful after the session ends. GQR therefore records the **original filename** and writes, for example:
 
-fit <- gqr_analysis(
-  data = gardening,
-  analysis_cols = analysis_columns,
-  id_col = "ID",
-  covariate_cols = c(
-    "Country_code",
-    "Age_group",
-    "Garden_size",
-    "Gardening_experience"
-  ),
-  transform = "standardise",
-  dummy_mode = "group_one_per",
-  groups = groups,
-  n_components = 4,
-  rotation = "varimax"
-)
+```{r generated-upload-example, eval=FALSE}
+data_file <- "survey_final.csv"
+if (!file.exists(data_file)) stop("Required data file not found: ", data_file)
 
-fit
-summary(fit)$variance
+expected_data_md5 <- "..."
+actual_data_md5 <- unname(tools::md5sum(data_file))
+if (!identical(actual_data_md5, expected_data_md5)) {
+  warning("The checksum of ", data_file,
+          " differs from the file used in the Shiny analysis.")
+}
+
+dat <- GQR::gqr_read(data_file)
 ```
+
+Place the original input file in the R working directory before rerunning the script, or edit `data_file` to its new location. Checksum verification can be disabled in the tab when it is not wanted.
+
+Grouping files are treated slightly differently. Their filename and checksum are recorded for provenance, but the **final group mapping is written explicitly into the script**. Consequently, if the grouping was uploaded and then changed interactively, the generated script reproduces the edited groups rather than silently re-reading the older file.
+
+Use **Copy script** to copy the current code to the clipboard or **Download .R** to save it directly. The **Append sessionInfo()** option adds the R/platform/package environment to the end of the script.
+
+The script represents the analytical state that was actually used. For example, PCA parameters are captured when PCA is run rather than simply reading controls that may have been changed afterwards. Similarly, Component–Covariate Regression is included only after a model has been successfully fitted. Display-only settings such as heatmap appearance are not included because they do not change the analytical result.
 
 ## References
 

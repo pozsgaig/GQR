@@ -24,6 +24,8 @@ outputTabUI <- function(id) {
         open = TRUE
       ),
 
+      uiOutput(ns("availability_message")),
+
       h4("Respondent filters"),
       div(
         class = "panel panel-primary",
@@ -116,6 +118,55 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
       if (is.null(x)) y else x
     }
 
+    categorical_palette <- function(n) {
+      n <- as.integer(n)
+      if (!is.finite(n) || n <= 0L) return(character())
+
+      # The first colours use a high-contrast, colour-blind-friendly sequence.
+      # Black is deliberately withheld for small/medium groups and, when many
+      # categories are required, is introduced only as the final colour.
+      core <- c(
+        "#0072B2", # blue
+        "#D55E00", # vermilion
+        "#009E73", # bluish green
+        "#CC79A7", # reddish purple
+        "#E69F00", # orange
+        "#56B4E9", # sky blue
+        "#7B61A8", # purple
+        "#6B8E23"  # olive green
+      )
+
+      extra <- unique(c(
+        Polychrome::glasbey.colors(32),
+        Polychrome::palette36.colors(36)
+      ))
+
+      # Remove colours that are nearly white or nearly black, and remove the
+      # curated colours from the extension pool to avoid duplicates.
+      rgb <- grDevices::col2rgb(extra)
+      lum <- 0.2126 * rgb[1, ] + 0.7152 * rgb[2, ] + 0.0722 * rgb[3, ]
+      extra <- extra[lum > 35 & lum < 225]
+      extra <- extra[!toupper(extra) %in% toupper(core)]
+
+      pool <- unique(c(core, extra))
+      use_black <- n >= 12L
+      coloured_needed <- n - as.integer(use_black)
+
+      if (coloured_needed > length(pool)) {
+        fallback <- grDevices::hcl.colors(
+          max(12L, coloured_needed - length(pool) + 8L),
+          palette = "Dynamic"
+        )
+        pool <- unique(c(pool, fallback))
+      }
+
+      out <- pool[seq_len(coloured_needed)]
+      if (use_black) out <- c(out, "#000000")
+      out
+    }
+
+    last_regression_settings <- reactiveVal(NULL)
+
     output_snapshot <- reactive({
       if (!is.null(dummies_state) && !is.null(dummies_state$snapshot)) {
         dummies_state$snapshot()
@@ -125,6 +176,14 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
     })
 
     output_data_trans <- reactive({
+      # Use the same respondent rows that feed the PCA whenever the Dummies
+      # module is available. This keeps generated respondent IDs and covariate
+      # metadata aligned after respondent filtering.
+      if (!is.null(dummies_state) && !is.null(dummies_state$filtered_data)) {
+        df <- dummies_state$filtered_data()
+        if (!is.null(df)) return(df)
+      }
+
       s <- output_snapshot()
       if (!is.null(s)) {
         s$data_trans
@@ -135,42 +194,94 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
 
     output_covariate_cols <- reactive({
       s <- output_snapshot()
-      if (!is.null(s)) {
+      df <- output_data_trans()
+
+      covs <- if (!is.null(s)) {
         s$covariate_cols %||% character(0)
       } else {
         data_state$covariate_cols() %||% character(0)
       }
-    })
 
-    current_loadings <- reactive({
-      L <- if (identical(pca_state$rotation(), "varimax")) {
-        pca_state$loadings_rot()
-      } else {
-        pca_state$loadings_unrot()
+      covs <- as.character(covs)
+      if (length(covs) == 0L || is.null(df)) return(character(0))
+
+      # Defensive remapping for snapshots created around a column rename.
+      # Normally data_module.R already stores the renamed covariate names, but
+      # the explicit map makes this tab robust to an older/stale snapshot.
+      if (!is.null(s) && !is.null(s$column_renames) && nrow(s$column_renames) > 0L) {
+        ren <- s$column_renames
+        if (all(c("from", "to") %in% names(ren))) {
+          map <- stats::setNames(as.character(ren$to), as.character(ren$from))
+          mapped <- unname(map[covs])
+          replace <- !is.na(mapped)
+          covs[replace] <- mapped[replace]
+        }
       }
 
+      unique(intersect(covs, names(df)))
+    })
+
+    make_respondent_ids <- function(df) {
+      if ("ID" %in% names(df)) {
+        ids <- as.character(df$ID)
+        validate(need(!anyNA(ids) && all(nzchar(ids)),
+                      "The ID column contains missing or empty values."))
+        validate(need(!anyDuplicated(ids),
+                      "The ID column must contain unique values."))
+        return(ids)
+      }
+
+      row_ids <- rownames(df)
+      if (!is.null(row_ids) &&
+          length(row_ids) == nrow(df) &&
+          !identical(row_ids, as.character(seq_len(nrow(df)))) &&
+          !anyDuplicated(row_ids)) {
+        return(as.character(row_ids))
+      }
+
+      width <- nchar(as.character(nrow(df)))
+      sprintf(paste0("R%0", width, "d"), seq_len(nrow(df)))
+    }
+
+    current_loadings <- reactive({
+      pr <- pca_state$result()
+      req(pr)
+
+      L <- if (identical(pca_state$rotation(), "varimax")) {
+        pr$loadings
+      } else {
+        pr$loadings_unrotated %||% pr$loadings
+      }
       req(L)
 
       L_df <- as.data.frame(L)
-      validate(need(nrow(L_df) > 0, "No respondent loadings available."))
+      validate(need(nrow(L_df) > 0L, "No respondent loadings available."))
+      validate(need(ncol(L_df) > 0L, "No component loadings available."))
+
+      component_cols <- colnames(L_df)
+      if (is.null(component_cols) || any(!nzchar(component_cols))) {
+        component_cols <- paste0("PC", seq_len(ncol(L_df)))
+        colnames(L_df) <- component_cols
+      }
 
       respondent_ids <- rownames(L_df)
+      if (is.null(respondent_ids) ||
+          length(respondent_ids) != nrow(L_df) ||
+          any(!nzchar(respondent_ids))) {
+        respondent_ids <- pr$respondents_used %||% NULL
+      }
+
       if (is.null(respondent_ids) || length(respondent_ids) != nrow(L_df)) {
         source_data <- output_data_trans()
-        if (!is.null(source_data) &&
-            "ID" %in% names(source_data) &&
-            nrow(source_data) == nrow(L_df)) {
-          respondent_ids <- as.character(source_data$ID)
+        if (!is.null(source_data) && nrow(source_data) == nrow(L_df)) {
+          respondent_ids <- make_respondent_ids(source_data)
         } else {
           respondent_ids <- paste0("R", seq_len(nrow(L_df)))
         }
       }
+
       L_df$ID <- as.character(respondent_ids)
-
-      pc_cols <- grep("^PC[0-9]+$", colnames(L_df), value = TRUE)
-      validate(need(length(pc_cols) > 0, "No component loadings available."))
-
-      L_df[, c("ID", pc_cols), drop = FALSE]
+      L_df[, c("ID", component_cols), drop = FALSE]
     })
 
     respondent_metadata <- reactive({
@@ -178,13 +289,12 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
       covs <- output_covariate_cols()
       req(df)
 
-      validate(need("ID" %in% colnames(df), "An ID column is required for the Component–Covariate Regression tab."))
-
       covs <- setdiff(covs %||% character(0), "ID")
-      keep_cols <- intersect(c("ID", covs), colnames(df))
+      covs <- intersect(covs, colnames(df))
 
-      out <- df[, keep_cols, drop = FALSE]
-      out$ID <- as.character(out$ID)
+      out <- df[, covs, drop = FALSE]
+      out$ID <- make_respondent_ids(df)
+      out <- out[, c("ID", covs), drop = FALSE]
 
       out |>
         dplyr::distinct(.data$ID, .keep_all = TRUE)
@@ -199,7 +309,7 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
     })
 
     component_names <- reactive({
-      grep("^PC[0-9]+$", colnames(current_loadings()), value = TRUE)
+      setdiff(colnames(current_loadings()), "ID")
     })
 
     all_covariate_names <- reactive({
@@ -230,10 +340,31 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
       dat[, covs, drop = FALSE]
     })
 
+    output$availability_message <- renderUI({
+      if (is.null(pca_state$result())) {
+        return(
+          shiny::div(
+            class = "alert alert-warning",
+            "No PCA result is available yet. Run PCA before using this tab."
+          )
+        )
+      }
+
+      covs <- output_covariate_cols()
+      if (length(covs) == 0L) {
+        return(
+          shiny::div(
+            class = "alert alert-warning",
+            "No covariates are available for the current analysis. Select covariate columns on the Data tab and click Next again."
+          )
+        )
+      }
+
+      NULL
+    })
+
     output$covariate_filters_out_ui <- renderUI({
       cov_df <- data_covariates_out()
-      req(cov_df)
-
       cov_names <- colnames(cov_df)
 
       if (length(cov_names) == 0) {
@@ -383,12 +514,70 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
       )
     })
 
+    respondent_filter_spec <- reactive({
+      dat_all <- respondent_loadings_all()
+      req(dat_all)
+
+      filters <- list()
+      for (v in all_covariate_names()) {
+        val <- input[[paste0("out_filter_", v)]]
+        col <- dat_all[[v]]
+        if (is.null(val)) next
+
+        if (is.character(col) || is.factor(col) || is.logical(col)) {
+          all_values <- sort(unique(as.character(col[!is.na(col)])))
+          selected <- sort(as.character(val))
+          if (!identical(selected, all_values)) {
+            filters[[v]] <- as.character(val)
+          }
+        } else if (is.numeric(col)) {
+          full_range <- range(col, na.rm = TRUE)
+          if (all(is.finite(full_range)) &&
+              !isTRUE(all.equal(as.numeric(val), as.numeric(full_range)))) {
+            filters[[v]] <- as.numeric(val)
+          }
+        }
+      }
+
+      id_raw <- trimws(input$id_filter_out %||% "")
+      ids <- NULL
+      if (nzchar(id_raw)) {
+        ids <- trimws(unlist(strsplit(id_raw, ",")))
+        ids <- ids[nzchar(ids)]
+      }
+
+      uncapped_n <- nrow(respondent_loadings_filtered_uncapped())
+      limit <- input$max_respondents_out
+      if (is.null(limit) || !is.finite(limit) || limit >= uncapped_n) {
+        limit <- NULL
+      } else {
+        limit <- as.integer(limit)
+      }
+
+      list(
+        filters = if (length(filters) == 0L) NULL else filters,
+        ids = if (length(ids) == 0L) NULL else ids,
+        limit = limit
+      )
+    })
+
     respondent_regression <- eventReactive(input$run_models, {
       dat <- respondent_loadings_filtered()
       comps <- input$components
       covs <- input$covariates
       req(dat, comps, covs, pca_state$result())
       req(length(comps) > 0, length(covs) > 0)
+
+      filter_state <- respondent_filter_spec()
+      run_settings <- list(
+        enabled = TRUE,
+        id_col = "ID",
+        components = as.character(comps),
+        covariates = as.character(covs),
+        filters = filter_state$filters,
+        ids = filter_state$ids,
+        limit = filter_state$limit
+      )
 
       # Delegate the fitted models and coefficient table to the same exported
       # package function used by the non-graphical interface. The displayed
@@ -404,7 +593,7 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
 
       metadata <- dat[, unique(c("ID", covs)), drop = FALSE]
 
-      tryCatch(
+      result <- tryCatch(
         GQR::gqr_regress_respondents(
           pca = pca_for_regression,
           metadata = metadata,
@@ -416,6 +605,9 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
           validate(need(FALSE, conditionMessage(e)))
         }
       )
+
+      last_regression_settings(run_settings)
+      result
     })
 
     reg_models <- reactive({
@@ -482,8 +674,10 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
 
       res |>
         dplyr::filter(.data$term != "(Intercept)") |>
-        dplyr::select(.data$component, .data$term, .data$estimate,
-                      .data$std.error, .data$statistic, .data$p.value)
+        dplyr::select(
+          "component", "term", "estimate",
+          "std.error", "statistic", "p.value"
+        )
     }, digits = 3)
 
     output$plot_controls_ui <- renderUI({
@@ -512,7 +706,7 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
         ),
         selectInput(
           ns("plot_covariate"),
-          "Covariate for grouping:",
+          "Covariate to plot:",
           choices = covs,
           selected = covs[1]
         )
@@ -551,6 +745,11 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
         dat_plot <- dat
         dat_plot[[cov]] <- factor(as.character(dat_plot[[cov]]), levels = full_levels)
 
+        cov_cols <- stats::setNames(
+          categorical_palette(length(full_levels)),
+          full_levels
+        )
+
         ggplot2::ggplot(
           dat_plot,
           ggplot2::aes(x = .data[[cov]], y = .data[[pc]])
@@ -561,7 +760,12 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
             na.rm = TRUE
           ) +
           ggplot2::scale_x_discrete(drop = FALSE) +
-          ggplot2::scale_fill_viridis_d(option = "D", end = 0.9, na.value = "grey85") +
+          ggplot2::scale_fill_manual(
+            values = cov_cols,
+            limits = full_levels,
+            drop = FALSE,
+            na.value = "grey85"
+          ) +
           ggplot2::theme_minimal(base_size = 18) +
           ggplot2::theme(
             axis.title = ggplot2::element_text(size = 20, face = "bold"),
@@ -753,44 +957,8 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
 
       validate(need(nrow(dat_plot) > 0, "No respondents available for this plot."))
 
-      drop_bright_cols <- function(cols) {
-        rgb <- grDevices::col2rgb(cols)
-        lum <- 0.2126 * rgb[1, ] + 0.7152 * rgb[2, ] + 0.0722 * rgb[3, ]
-        keep <- lum < 235 & !(rgb[1, ] > 245 & rgb[2, ] > 245 & rgb[3, ] > 245)
-        cols[keep]
-      }
-
       plot_pal <- function(n, var_key = "", seed = 1) {
-        drop_bright_cols <- function(cols) {
-          rgb <- grDevices::col2rgb(cols)
-          lum <- 0.2126 * rgb[1, ] + 0.7152 * rgb[2, ] + 0.0722 * rgb[3, ]
-          keep <- lum < 225 & !(rgb[1, ] > 240 & rgb[2, ] > 240 & rgb[3, ] > 240)
-          unname(cols[keep])
-        }
-
-        base_pool <- unique(c(
-          Polychrome::glasbey.colors(32),
-          Polychrome::palette36.colors(36)
-        ))
-        base_pool <- drop_bright_cols(base_pool)
-
-        if (n > length(base_pool)) {
-          if (!is.null(seed)) set.seed(seed)
-          extra_cols <- drop_bright_cols(
-            Polychrome::createPalette(
-              N = n - length(base_pool) + 20,
-              seedcolors = c("#2A3B8E", "#E85D04", "#1B9E77"),
-              range = c(20, 75)
-            )
-          )
-          base_pool <- c(base_pool, extra_cols)
-        }
-
-        key_sum <- sum(utf8ToInt(var_key))
-        start <- (key_sum %% length(base_pool)) + 1L
-        pal <- c(base_pool[start:length(base_pool)], base_pool[seq_len(start - 1L)])
-
-        pal[seq_len(n)]
+        categorical_palette(n)
       }
 
       get_group_cols <- function(var, levels_now, seed = 1) {
@@ -834,36 +1002,56 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
 
       # 1. points ---------------------------------------------------------------
       if (!is.null(colvar) && !identical(colvar, "None")) {
-        point_levels <- sort(unique(as.character(dat_plot[[colvar]])))
-        point_cols <- get_group_cols(colvar, point_levels, seed = 101)
+        if (is.numeric(dat_plot[[colvar]])) {
+          p <- p +
+            ggplot2::geom_point(
+              mapping = ggplot2::aes(
+                colour = .data[[colvar]],
+                size = if (!is.null(sizevar) && !identical(sizevar, "None")) .data$.size_map else NULL
+              ),
+              alpha = 0.85,
+              na.rm = TRUE,
+              key_glyph = "point"
+            ) +
+            ggplot2::scale_colour_viridis_c(
+              name = colvar,
+              option = "D",
+              end = 0.90,
+              na.value = "grey75",
+              guide = ggplot2::guide_colourbar(order = 1)
+            )
+        } else {
+          point_levels <- sort(unique(as.character(dat_plot[[colvar]])))
+          point_cols <- get_group_cols(colvar, point_levels, seed = 101)
 
-        p <- p +
-          ggplot2::geom_point(
-            mapping = ggplot2::aes(
-              colour = .data[[colvar]],
-              size = if (!is.null(sizevar) && !identical(sizevar, "None")) .data$.size_map else NULL
-            ),
-            alpha = 0.85,
-            na.rm = TRUE,
-            key_glyph = "point"
-          ) +
-          ggplot2::scale_colour_manual(
-            name = colvar,
-            values = point_cols,
-            na.value = "grey75",
-            guide = ggplot2::guide_legend(
-              order = 1,
-              override.aes = list(
-                shape = 16,
-                size = 5,
-                alpha = 1,
-                linetype = 0,
-                linewidth = 0,
-                fill = NA,
-                colour = unname(point_cols)
+          p <- p +
+            ggplot2::geom_point(
+              mapping = ggplot2::aes(
+                colour = .data[[colvar]],
+                size = if (!is.null(sizevar) && !identical(sizevar, "None")) .data$.size_map else NULL
+              ),
+              alpha = 0.85,
+              na.rm = TRUE,
+              key_glyph = "point"
+            ) +
+            ggplot2::scale_colour_manual(
+              name = colvar,
+              values = point_cols,
+              na.value = "grey75",
+              guide = ggplot2::guide_legend(
+                order = 1,
+                override.aes = list(
+                  shape = 16,
+                  size = 5,
+                  alpha = 1,
+                  linetype = 0,
+                  linewidth = 0,
+                  fill = NA,
+                  colour = unname(point_cols)
+                )
               )
             )
-          )
+        }
       } else {
         p <- p +
           ggplot2::geom_point(
@@ -1134,5 +1322,174 @@ outputTabServer <- function(id, data_state, pca_state, dummies_state = NULL) {
           legend.key.height = grid::unit(1.1, "lines")
         )
     })
+
+    plot_settings <- reactive({
+      if (is.null(pca_state$result())) return(NULL)
+
+      comps <- component_names()
+      covs <- all_covariate_names()
+      if (length(comps) == 0L || length(covs) == 0L) return(NULL)
+
+      filter_state <- respondent_filter_spec()
+      ellipse_levels <- suppressWarnings(as.numeric(input$sc_ell_levels %||% numeric(0)))
+      ellipse_levels <- ellipse_levels[is.finite(ellipse_levels)]
+
+      plot_dat <- respondent_loadings_all()
+      filtered_dat <- respondent_loadings_filtered()
+
+      relationship_component <- input$plot_component %||% comps[1]
+      relationship_covariate <- input$plot_covariate %||% covs[1]
+
+      x_component <- input$sc_xcomp %||% comps[1]
+      y_component <- input$sc_ycomp %||% comps[min(2L, length(comps))]
+      scatter_colour <- input$sc_colour %||% "None"
+      scatter_size <- input$sc_size %||% "None"
+      scatter_hull <- input$sc_hull %||% "None"
+      scatter_ellipse <- input$sc_ellipse %||% "None"
+
+      scatter_dat <- filtered_dat[
+        is.finite(filtered_dat[[x_component]]) &
+          is.finite(filtered_dat[[y_component]]),
+        ,
+        drop = FALSE
+      ]
+
+      palette_for <- function(var, levels_now = NULL) {
+        if (is.null(var) || identical(var, "None") || !var %in% names(plot_dat)) {
+          return(character(0))
+        }
+
+        all_levels <- sort(unique(as.character(plot_dat[[var]])))
+        all_levels <- all_levels[!is.na(all_levels)]
+        full_map <- stats::setNames(categorical_palette(length(all_levels)), all_levels)
+
+        if (is.null(levels_now)) {
+          return(full_map)
+        }
+
+        stats::setNames(
+          unname(full_map[levels_now]),
+          levels_now
+        )
+      }
+
+      relationship_type <- if (is.numeric(plot_dat[[relationship_covariate]])) {
+        "numeric"
+      } else {
+        "categorical"
+      }
+
+      relationship_levels <- if (identical(relationship_type, "categorical")) {
+        sort(unique(as.character(plot_dat[[relationship_covariate]])))
+      } else {
+        character(0)
+      }
+      relationship_levels <- relationship_levels[!is.na(relationship_levels)]
+
+      colour_type <- if (identical(scatter_colour, "None")) {
+        "none"
+      } else if (is.numeric(plot_dat[[scatter_colour]])) {
+        "numeric"
+      } else {
+        "categorical"
+      }
+
+      colour_levels <- if (identical(colour_type, "categorical")) {
+        sort(unique(as.character(scatter_dat[[scatter_colour]])))
+      } else {
+        character(0)
+      }
+      colour_levels <- colour_levels[!is.na(colour_levels)]
+
+      size_type <- if (identical(scatter_size, "None")) {
+        "none"
+      } else if (is.numeric(plot_dat[[scatter_size]])) {
+        "numeric"
+      } else {
+        "categorical"
+      }
+
+      size_levels <- if (identical(size_type, "categorical")) {
+        sort(unique(as.character(scatter_dat[[scatter_size]])))
+      } else {
+        character(0)
+      }
+      size_levels <- size_levels[!is.na(size_levels)]
+
+      hull_levels <- character(0)
+      if (!identical(scatter_hull, "None")) {
+        hull_source <- scatter_dat[!is.na(scatter_dat[[scatter_hull]]), , drop = FALSE]
+        hull_parts <- split(hull_source, as.character(hull_source[[scatter_hull]]))
+        hull_parts <- hull_parts[vapply(
+          hull_parts,
+          function(gdf) {
+            nrow(gdf) >= 3L &&
+              nrow(unique(gdf[, c(x_component, y_component), drop = FALSE])) >= 3L
+          },
+          logical(1)
+        )]
+        hull_levels <- sort(names(hull_parts))
+      }
+
+      valid_ellipse_levels <- character(0)
+      if (!identical(scatter_ellipse, "None")) {
+        ellipse_source <- scatter_dat[!is.na(scatter_dat[[scatter_ellipse]]), , drop = FALSE]
+        ellipse_counts <- table(as.character(ellipse_source[[scatter_ellipse]]))
+        valid_ellipse_levels <- sort(names(ellipse_counts[ellipse_counts >= 3L]))
+      }
+
+      list(
+        filters = filter_state,
+        relationship = list(
+          component = relationship_component,
+          covariate = relationship_covariate,
+          type = relationship_type,
+          levels = relationship_levels,
+          colours = if (identical(relationship_type, "categorical")) {
+            palette_for(relationship_covariate, relationship_levels)
+          } else {
+            character(0)
+          }
+        ),
+        scatter = list(
+          x_component = x_component,
+          y_component = y_component,
+          colour = scatter_colour,
+          colour_type = colour_type,
+          colour_levels = colour_levels,
+          colour_values = if (identical(colour_type, "categorical")) {
+            palette_for(scatter_colour, colour_levels)
+          } else {
+            character(0)
+          },
+          size = scatter_size,
+          size_type = size_type,
+          size_levels = size_levels,
+          hull = scatter_hull,
+          hull_levels = hull_levels,
+          hull_values = if (!identical(scatter_hull, "None") && length(hull_levels) > 0L) {
+            palette_for(scatter_hull, hull_levels)
+          } else {
+            character(0)
+          },
+          ellipse = scatter_ellipse,
+          ellipse_group_levels = valid_ellipse_levels,
+          ellipse_values = if (!identical(scatter_ellipse, "None") && length(valid_ellipse_levels) > 0L) {
+            palette_for(scatter_ellipse, valid_ellipse_levels)
+          } else {
+            character(0)
+          },
+          ellipse_levels = ellipse_levels,
+          show_arrows = isTRUE(input$sc_show_arrows),
+          arrow_vars = as.character(input$sc_arrow_vars %||% character(0))
+        )
+      )
+    })
+
+    list(
+      regression_settings = reactive(last_regression_settings()),
+      regression_result = respondent_regression,
+      plot_settings = plot_settings
+    )
   })
 }

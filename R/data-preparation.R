@@ -1,23 +1,121 @@
 # Data preparation --------------------------------------------------------
 
+.gqr_read_csv_once <- function(path, encoding) {
+  header <- readLines(path, n = 1L, warn = FALSE, encoding = encoding)
+  if (length(header) == 0L) {
+    stop("The CSV file is empty.", call. = FALSE)
+  }
+
+  separators <- c(",", ";", "\t")
+  candidates <- lapply(
+    separators,
+    function(separator) {
+      tryCatch(
+        utils::read.table(
+          path,
+          header = TRUE,
+          sep = separator,
+          quote = "\"",
+          comment.char = "",
+          check.names = FALSE,
+          stringsAsFactors = FALSE,
+          fill = TRUE,
+          fileEncoding = encoding
+        ),
+        error = function(e) NULL
+      )
+    }
+  )
+
+  column_counts <- vapply(
+    candidates,
+    function(x) if (is.null(x)) 0L else ncol(x),
+    integer(1)
+  )
+
+  if (max(column_counts) < 1L) {
+    stop("The CSV file could not be parsed.", call. = FALSE)
+  }
+
+  out <- candidates[[which.max(column_counts)]]
+  if (ncol(out) == 1L && grepl("[,;\\t]", names(out)[1L])) {
+    stop(
+      "The CSV header was not separated into columns. Check the delimiter and file encoding.",
+      call. = FALSE
+    )
+  }
+
+  out
+}
+
+.gqr_read_csv <- function(path) {
+  encodings <- c("UTF-8-BOM", "UTF-8", "CP1252", "latin1")
+  errors <- character()
+
+  for (encoding in encodings) {
+    attempt <- tryCatch(
+      withCallingHandlers(
+        .gqr_read_csv_once(path, encoding),
+        warning = function(w) {
+          message <- conditionMessage(w)
+          encoding_warning <- grepl(
+            "invalid input|invalid multibyte|invalid UTF|conversion failure|cannot translate|incomplete multibyte",
+            message,
+            ignore.case = TRUE
+          )
+          if (encoding_warning) {
+            stop(message, call. = FALSE)
+          }
+          invokeRestart("muffleWarning")
+        }
+      ),
+      error = function(e) e
+    )
+
+    if (!inherits(attempt, "error")) {
+      return(attempt)
+    }
+
+    errors <- c(errors, paste0(encoding, ": ", conditionMessage(attempt)))
+  }
+
+  stop(
+    paste0(
+      "The CSV file could not be read using UTF-8, Windows-1252 or Latin-1 encodings. ",
+      "The file may be malformed. Details: ",
+      paste(errors, collapse = " | ")
+    ),
+    call. = FALSE
+  )
+}
+
 #' Read data for Generalised Q analysis
 #'
 #' @description
-#' Reads a rectangular respondent-level dataset while preserving the original
-#' column names. CSV, RDS, RDA, and RData files are supported. This is the file
-#' input counterpart to [gqr_prepare_data()] and the Shiny Data tab.
+#' Reads a rectangular respondent-level dataset and converts its headings to
+#' unique, syntactically valid R column names. CSV, RDS, RDA, and RData files
+#' are supported. This is the file input counterpart to [gqr_prepare_data()]
+#' and the Shiny Data tab.
 #'
 #' @param path A length-one character path to an existing CSV, RDS, RDA, or
 #'   RData file.
 #'
-#' @return A data frame with at least one row and one column.
+#' @return A data frame with at least one row and one column. Column headings
+#'   are converted to ASCII, R-compatible, unique names on import.
 #'
 #' @details
-#' CSV delimiters are detected from comma, semicolon, and tab candidates. RDS
-#' files must contain one object coercible to a data frame. RDA/RData files must
-#' contain exactly one data frame, or a data frame whose object name matches the
-#' file name. Column names are not syntactically altered because they may carry
-#' meaningful statement labels.
+#' CSV delimiters are detected from comma, semicolon, and tab candidates. GQR
+#' first attempts UTF-8 and then Windows-1252/Latin-1 encodings so that common
+#' spreadsheet exports containing accented European characters can be read.
+#'
+#' Imported headings are transliterated to ASCII where possible and converted
+#' with R-compatible syntax. For example, `Questão principal` becomes
+#' `Questao.principal`. Duplicate headings are made unique. This normalisation
+#' is performed once at import so all later GQR stages use stable names.
+#'
+#' RDS files must contain one object coercible to a data frame. RDA/RData files
+#' must contain exactly one data frame, or a data frame whose object name
+#' matches the file name.
 #'
 #' Reading data does not assign analytical roles or transform values. Use
 #' [gqr_prepare_data()] after import.
@@ -43,45 +141,14 @@ gqr_read <- function(path) {
   extension <- tolower(tools::file_ext(path))
 
   if (extension == "csv") {
-    header <- readLines(path, n = 1L, warn = FALSE, encoding = "UTF-8")
-    if (length(header) == 0L) {
-      stop("The CSV file is empty.", call. = FALSE)
-    }
-
-    separators <- c(",", ";", "\t")
-    separator_counts <- vapply(
-      separators,
-      function(separator) {
-        lengths(regmatches(header, gregexpr(separator, header, fixed = TRUE)))
-      },
-      integer(1)
-    )
-    separator <- separators[which.max(separator_counts)]
-
-    out <- utils::read.table(
-      path,
-      header = TRUE,
-      sep = separator,
-      quote = "\"",
-      comment.char = "",
-      check.names = FALSE,
-      stringsAsFactors = FALSE,
-      fill = TRUE,
-      fileEncoding = "UTF-8-BOM"
-    )
-
-    if (ncol(out) == 1L && grepl("[,;\t]", names(out)[1L])) {
-      stop(
-        "The CSV header was not separated into columns. Check the delimiter and file encoding.",
-        call. = FALSE
-      )
-    }
-
+    out <- .gqr_read_csv(path)
+    out <- .gqr_repair_import_names(out)
     return(.gqr_check_data(out))
   }
 
   if (extension == "rds") {
     object <- readRDS(path)
+    object <- .gqr_repair_import_names(object)
     return(.gqr_check_data(object))
   }
 
@@ -98,12 +165,16 @@ gqr_read <- function(path) {
     ]
 
     if (length(data_frames) == 1L) {
-      return(.gqr_check_data(get(data_frames, envir = data_environment)))
+      out <- get(data_frames, envir = data_environment)
+      out <- .gqr_repair_import_names(out)
+      return(.gqr_check_data(out))
     }
 
     expected_name <- tools::file_path_sans_ext(basename(path))
     if (expected_name %in% data_frames) {
-      return(.gqr_check_data(get(expected_name, envir = data_environment)))
+      out <- get(expected_name, envir = data_environment)
+      out <- .gqr_repair_import_names(out)
+      return(.gqr_check_data(out))
     }
 
     stop(

@@ -222,7 +222,12 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
         center = isTRUE(input$center),
         scale = isTRUE(input$scale),
         SPSS = isTRUE(input$SPSS),
-        impute_mean = isTRUE(input$impute_mean)
+        impute_mean = isTRUE(input$impute_mean),
+        engine = if (isTRUE(input$SPSS)) "matrix" else "design",
+        method = if (isTRUE(input$SPSS)) "correlation" else "prcomp",
+        id_col = id_col,
+        data_filter = if (!is.null(dummies_state$filter_spec)) dummies_state$filter_spec() else NULL,
+        n_respondents = nrow(df)
       )
       pca_settings(settings)
 
@@ -544,17 +549,43 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
       scree_plot_obj()
     })
 
-    # ---------- covariates to append to loadings tables ----------
+    # ---------- respondent IDs and covariates for PCA display tables ----------
+    # The package-level PCA functions do not require an explicit ID column.
+    # Reproduce the same ID rules here so uploaded datasets without `ID` can
+    # still use the loadings and W display tools.
+    pca_display_ids <- function(df) {
+      if ("ID" %in% colnames(df)) {
+        ids <- as.character(df$ID)
+        validate(need(!anyNA(ids) && all(nzchar(ids)),
+                      "The ID column contains missing or empty values."))
+        validate(need(!anyDuplicated(ids),
+                      "The ID column must contain unique values."))
+        return(ids)
+      }
+
+      row_ids <- rownames(df)
+      if (!is.null(row_ids) &&
+          length(row_ids) == nrow(df) &&
+          !identical(row_ids, as.character(seq_len(nrow(df)))) &&
+          !anyDuplicated(row_ids)) {
+        return(as.character(row_ids))
+      }
+
+      width <- nchar(as.character(nrow(df)))
+      sprintf(paste0("R%0", width, "d"), seq_len(nrow(df)))
+    }
+
     covariates_for_tables <- reactive({
-      df <- pca_data_trans()
+      # Loadings correspond to the exact respondent set entering PCA, after
+      # any Dummies-tab respondent filters have been applied.
+      df <- pca_input_data()
       covs <- setdiff(pca_covariate_cols(), "ID")
       req(df)
-      validate(need("ID" %in% colnames(df), "An ID column is required for loadings metadata."))
 
-      keep_cols <- intersect(c("ID", covs), colnames(df))
-      out <- df[, keep_cols, drop = FALSE]
-      out$ID <- as.character(out$ID)
-      out
+      covs <- intersect(covs, colnames(df))
+      out <- df[, covs, drop = FALSE]
+      out$.gqr_id <- pca_display_ids(df)
+      out[, c(".gqr_id", covs), drop = FALSE]
     })
 
     append_covariates_to_loadings <- function(L_df) {
@@ -562,7 +593,7 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
       if (is.null(cov_df)) return(L_df)
 
       L_df$Variable <- as.character(L_df$Variable)
-      dplyr::left_join(L_df, cov_df, by = c("Variable" = "ID"))
+      dplyr::left_join(L_df, cov_df, by = c("Variable" = ".gqr_id"))
     }
 
 
@@ -740,16 +771,13 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
 
     scored_W_covariates <- reactive({
       df <- pca_input_data()
-      covs <- pca_covariate_cols()
+      covs <- setdiff(pca_covariate_cols(), "ID")
       req(df)
 
-      keep_cols <- union("ID", covs)
-      keep_cols <- intersect(keep_cols, colnames(df))
-      validate(need("ID" %in% keep_cols, "An ID column is required for W-column filtering."))
-
-      out <- df[, keep_cols, drop = FALSE]
-      out$ID <- as.character(out$ID)
-      out
+      covs <- intersect(covs, colnames(df))
+      out <- df[, covs, drop = FALSE]
+      out$ID <- pca_display_ids(df)
+      out[, c("ID", covs), drop = FALSE]
     })
 
     filtered_scored_W_ids <- reactive({
@@ -802,9 +830,20 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
 
       validate(need(length(ids) > 0, "No respondents match the display filters."))
 
-      keep <- match(ids, as.character(df$ID))
+      source_ids <- pca_display_ids(df)
+      keep <- match(ids, source_ids)
       keep <- keep[!is.na(keep)]
       df_sub <- df[keep, , drop = FALSE]
+      selected_ids <- source_ids[keep]
+
+      # Give the temporary W preview an explicit internal identifier. This
+      # preserves the PCA respondent names even when the uploaded dataset had
+      # no ID column and only a subset of respondents is displayed.
+      internal_id <- ".gqr_display_id"
+      while (internal_id %in% names(df_sub)) {
+        internal_id <- paste0(internal_id, "_")
+      }
+      df_sub[[internal_id]] <- selected_ids
 
       # Keep the interactive table bounded. The PCA itself still uses every
       # combination.
@@ -815,7 +854,7 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
         data = df_sub,
         analysis_cols = colnames(D),
         D = D,
-        id_col = "ID",
+        id_col = internal_id,
         rows = rows,
         algorithm = "matmul"
       )
@@ -973,7 +1012,8 @@ pcaTabServer <- function(id, data_state, dummies_state = NULL) {
       scored_W = scored_W,
       loadings_unrot = reactive(as.data.frame(pca_unrotated()$loadings_rot)),
       loadings_rot = reactive(as.data.frame(pca_selected()$loadings_rot)),
-      rotation = reactive({ req(pca_settings()); pca_settings()$rotation })
+      rotation = reactive({ req(pca_settings()); pca_settings()$rotation }),
+      settings = reactive(pca_settings())
     )
   })
 }

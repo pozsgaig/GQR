@@ -15,7 +15,7 @@
 #' naming and interpreting extracted components.
 #'
 #' @section Mathematical orientation:
-#' Let `V` be a respondent-by-statement matrix and `D` a binary design matrix
+#' Let `V` be a respondent-by-statement matrix and `D` a binary dummy matrix
 #' whose rows indicate which simple statements belong to each synthetic
 #' combination. GQR constructs
 #'
@@ -57,7 +57,9 @@
 #'    component interpretation.
 #'
 #' [gqr_analysis()] runs these stages in one call. [run_gqr()] starts the Shiny
-#' application.
+#' application. The graphical interface includes a Reproducible R script tab;
+#' [gqr_file_provenance()] and [gqr_reproducible_script()] provide the underlying
+#' provenance and script-generation helpers.
 #'
 #' @section Interpretation:
 #' Statement-content regressions identify which simple statements distinguish
