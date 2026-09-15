@@ -13,7 +13,7 @@ test_that("bundled examples load through the accessor", {
   expect_identical(levels(dummy$Factor_covariate), c("A", "B"))
 
   expect_s3_class(garden, "data.frame")
-  expect_equal(dim(garden), c(5524L, 25L))
+  expect_equal(dim(garden), c(5511L, 25L))
   expect_true(all(c("ID", "Country_code", "NUTS") %in% names(garden)))
 })
 
@@ -27,7 +27,7 @@ test_that("bundled examples load through data", {
   expect_equal(dim(e$dummy_data), c(10L, 12L))
   expect_true(is.numeric(e$dummy_data$Numeric_covariate))
   expect_true(is.factor(e$dummy_data$Factor_covariate))
-  expect_equal(dim(e$gardening), c(5524L, 25L))
+  expect_equal(dim(e$gardening), c(5511L, 25L))
 })
 
 test_that("bundled example roles are shared by GUI and programmatic workflows", {
